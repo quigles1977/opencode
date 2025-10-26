@@ -959,25 +959,14 @@ func (a Model) home() (string, int, int) {
 	effectiveWidth := a.width - 4
 	baseStyle := styles.NewStyle().Foreground(t.Text()).Background(t.Background())
 	base := baseStyle.Render
-	muted := styles.NewStyle().Foreground(t.TextMuted()).Background(t.Background()).Render
 
-	open := `
-                    
-█▀▀█ █▀▀█ █▀▀█ █▀▀▄ 
-█░░█ █░░█ █▀▀▀ █░░█ 
-▀▀▀▀ █▀▀▀ ▀▀▀▀ ▀  ▀ `
+	bob := `
 
-	code := `
-             ▄
-█▀▀▀ █▀▀█ █▀▀█ █▀▀█
-█░░░ █░░█ █░░█ █▀▀▀
-▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀`
+█▀▀▄ █▀▀█ █▀▀▄
+█▀▀▄ █░░█ █▀▀▄
+▀▀▀  ▀▀▀▀ ▀▀▀ `
 
-	logo := lipgloss.JoinHorizontal(
-		lipgloss.Top,
-		muted(open),
-		base(code),
-	)
+	logo := base(bob)
 	// cwd := app.Info.Path.Cwd
 	// config := app.Info.Path.Config
 
