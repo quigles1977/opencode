@@ -1,0 +1,66 @@
+- AI-powered web search that returns synthesized answers with citations
+- Uses Perplexity AI to aggregate information from multiple sources
+- Returns comprehensive answers with full source URLs for verification
+- Optionally fetches full content from cited sources for deeper analysis
+- Use this tool for research, fact-finding, and information gathering
+
+Key Features:
+  - Synthesized answers (not just search result links)
+  - Automatic citations with URLs, titles, and dates
+  - Related questions for research expansion
+  - Optional deep research mode for complex topics
+  - Domain and time filtering (academic, recent, specific sites)
+  - Content fetching from citations for detailed analysis
+
+Usage notes:
+  - Ask clear research questions for best synthesized answers
+  - Use searchDomainFilter for academic or specific sources
+  - Use searchRecencyFilter for time-sensitive information
+  - Enable fetchContent to get full text from top citations
+  - Enable deepResearch for multi-angle comprehensive research
+  - Related questions help identify follow-up research paths
+  - API requires PERPLEXITY_API_KEY environment variable
+
+Examples:
+
+Basic search:
+  query: "What are the key differences between Rust and Go for systems programming?"
+
+Academic research:
+  query: "Latest research on transformer architecture improvements"
+  searchDomainFilter: ["arxiv.org", "scholar.google.com"]
+  model: "sonar-pro"
+
+Recent news:
+  query: "OpenAI API updates and new features"
+  searchRecencyFilter: "week"
+
+Deep research with content:
+  query: "How does Kubernetes handle distributed tracing?"
+  deepResearch: true
+  fetchContent: true
+  maxContentFetches: 5
+
+Financial research:
+  query: "Tesla Q4 2024 earnings analysis"
+  searchDomainFilter: ["sec.gov"]
+  returnCitations: true
+
+Parameters:
+  - query (required): Your research question or search query
+  - model: "sonar" (faster, cheaper) or "sonar-pro" (more thorough, 2x citations)
+  - searchDomainFilter: Array of domains to search (e.g., ["github.com", "docs.python.org"])
+  - searchRecencyFilter: "day" | "week" | "month" | "year"
+  - returnCitations: Include source URLs (default: true)
+  - returnRelatedQuestions: Get follow-up questions (default: true)
+  - fetchContent: Fetch full text from top citations (default: false)
+  - maxContentFetches: How many citations to fetch (default: 3)
+  - deepResearch: Enable multi-iteration research (default: false)
+  - maxIterations: Number of research iterations (default: 3)
+
+Cost & Performance:
+  - sonar: ~$0.005 per 1000 tokens, 5-10s response time
+  - sonar-pro: ~$0.015 per 1000 tokens, double citations, 10-15s
+  - fetchContent adds 2-5s per URL fetched
+  - deepResearch multiplies API calls by maxIterations
+  - Requires paid Perplexity API key

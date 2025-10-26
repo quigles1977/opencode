@@ -584,6 +584,45 @@ export namespace Config {
           disable_paste_summary: z.boolean().optional(),
         })
         .optional(),
+      perplexity: z
+        .object({
+          apiKey: z.string().optional(),
+          defaultModel: z.enum(["sonar", "sonar-pro"]).optional(),
+          budget: z
+            .object({
+              enabled: z.boolean().optional(),
+              dailyLimit: z.number().optional(),
+              perQueryLimit: z.number().optional(),
+              warnThreshold: z.number().optional(),
+            })
+            .optional(),
+          defaults: z
+            .object({
+              returnCitations: z.boolean().optional(),
+              returnRelatedQuestions: z.boolean().optional(),
+              returnImages: z.boolean().optional(),
+              timeout: z.number().optional(),
+              temperature: z.number().optional(),
+            })
+            .optional(),
+          contentFetch: z
+            .object({
+              enabled: z.boolean().optional(),
+              timeout: z.number().optional(),
+              maxLength: z.number().optional(),
+              maxConcurrent: z.number().optional(),
+              userAgent: z.string().optional(),
+            })
+            .optional(),
+          deepResearch: z
+            .object({
+              maxIterations: z.number().optional(),
+              refinementStrategy: z.enum(["related_questions", "auto"]).optional(),
+            })
+            .optional(),
+        })
+        .optional()
+        .describe("Perplexity AI search tool configuration"),
     })
     .strict()
     .meta({
