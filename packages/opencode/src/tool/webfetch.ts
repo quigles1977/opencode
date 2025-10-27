@@ -4,6 +4,8 @@ import TurndownService from "turndown"
 import DESCRIPTION from "./webfetch.txt"
 import { Config } from "../config/config"
 import { Permission } from "../permission"
+import { createRagStorage } from "../rag/storage/store"
+import { DEFAULT_RAG_CONFIG } from "../rag/config"
 
 const MAX_RESPONSE_SIZE = 5 * 1024 * 1024 // 5MB
 const DEFAULT_TIMEOUT = 30 * 1000 // 30 seconds
@@ -93,51 +95,69 @@ export const WebFetchTool = Tool.define("webfetch", {
 
     const title = `${params.url} (${contentType})`
 
+    // Process content based on requested format
+    let processedContent = content
+    let contentForStorage = content
+
     // Handle content based on requested format and actual content type
     switch (params.format) {
       case "markdown":
         if (contentType.includes("text/html")) {
-          const markdown = convertHTMLToMarkdown(content)
-          return {
-            output: markdown,
-            title,
-            metadata: {},
-          }
+          processedContent = convertHTMLToMarkdown(content)
+          contentForStorage = processedContent
         }
-        return {
-          output: content,
-          title,
-          metadata: {},
-        }
+        break
 
       case "text":
         if (contentType.includes("text/html")) {
-          const text = await extractTextFromHTML(content)
-          return {
-            output: text,
-            title,
-            metadata: {},
-          }
+          processedContent = await extractTextFromHTML(content)
+          contentForStorage = processedContent
         }
-        return {
-          output: content,
-          title,
-          metadata: {},
-        }
+        break
 
       case "html":
-        return {
-          output: content,
-          title,
-          metadata: {},
-        }
+        processedContent = content
+        contentForStorage = content
+        break
+    }
 
-      default:
-        return {
-          output: content,
-          title,
-          metadata: {},
-        }
+    // Store in RAG if enabled and autoStore is true
+    if (cfg.rag?.enabled && cfg.rag?.storage?.autoStore) {
+      const ragStorage = createRagStorage(cfg.rag || DEFAULT_RAG_CONFIG)
+
+      // Store in background (don't block the response)
+      ragStorage
+        .storeDocument({
+          content: contentForStorage,
+          sourceType: "webfetch",
+          sourceUrl: params.url,
+          title: params.url,
+          sessionId: ctx.sessionID,
+          metadata: {
+            contentType,
+            format: params.format,
+            fetchedAt: new Date().toISOString(),
+            contentLength: content.length,
+          },
+          tags: ["webfetch", contentType.split("/")[0]],
+        })
+        .then((result) => {
+          if (!result.success) {
+            console.warn(`Failed to store WebFetch result in RAG: ${result.error}`)
+          }
+        })
+        .catch((err) => {
+          console.warn(`Error storing WebFetch result in RAG:`, err)
+        })
+        .finally(() => {
+          ragStorage.close()
+        })
+    }
+
+    return {
+      output: processedContent,
+      title,
+      metadata: {},
     }
   },
 })

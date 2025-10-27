@@ -10,6 +10,8 @@ import { formatReport, formatSimpleReport } from "./perplexity/markdown-formatte
 import { conductDeepResearch } from "./perplexity/deep-research"
 import { calculateCost, trackUsage, getDailyUsage, formatCost } from "./perplexity/cost-tracker"
 import type { PerplexitySearchParams } from "./perplexity/types"
+import { createRagStorage } from "../rag/storage/store"
+import { DEFAULT_RAG_CONFIG } from "../rag/config"
 
 const DEFAULT_TIMEOUT = 60 * 1000 // 60 seconds
 const MAX_TIMEOUT = 120 * 1000 // 2 minutes
@@ -199,6 +201,41 @@ export const PerplexitySearchTool = Tool.define("perplexity_search", {
 					},
 				})
 
+				// Store in RAG if enabled and autoStore is true
+				if (cfg.rag?.enabled && cfg.rag?.storage?.autoStore) {
+					const ragStorage = createRagStorage(cfg.rag || DEFAULT_RAG_CONFIG)
+
+					// Store in background (don't block the response)
+					ragStorage
+						.storeDocument({
+							content: output,
+							sourceType: "perplexity_deep_research",
+							sourceUrl: result.allCitations[0]?.url || `perplexity://search/${encodeURIComponent(params.query)}`,
+							title: `Research: ${params.query}`,
+							sessionId: ctx.sessionID,
+							metadata: {
+								query: params.query,
+								model,
+								iterations: result.iterations.length,
+								citationsCount: result.allCitations.length,
+								totalTokens: result.totalTokens,
+								cost: result.totalCost,
+							},
+							tags: ["perplexity", "deep_research", model],
+						})
+						.then((res) => {
+							if (!res.success) {
+								console.warn(`Failed to store Perplexity Deep Research in RAG: ${res.error}`)
+							}
+						})
+						.catch((err) => {
+							console.warn(`Error storing Perplexity Deep Research in RAG:`, err)
+						})
+						.finally(() => {
+							ragStorage.close()
+						})
+				}
+
 				return {
 					title: `Research: ${result.iterations.length} iterations, ${result.allCitations.length} sources`,
 					metadata: {
@@ -268,6 +305,40 @@ export const PerplexitySearchTool = Tool.define("perplexity_search", {
 						usage: response.usage,
 					})
 				: formatSimpleReport(params.query, answer, citations, relatedQuestions)
+
+			// Store in RAG if enabled and autoStore is true
+			if (cfg.rag?.enabled && cfg.rag?.storage?.autoStore) {
+				const ragStorage = createRagStorage(cfg.rag || DEFAULT_RAG_CONFIG)
+
+				// Store in background (don't block the response)
+				ragStorage
+					.storeDocument({
+						content: output,
+						sourceType: "perplexity",
+						sourceUrl: citations[0]?.url || `perplexity://search/${encodeURIComponent(params.query)}`,
+						title: `Search: ${params.query}`,
+						sessionId: ctx.sessionID,
+						metadata: {
+							query: params.query,
+							model,
+							citationsCount: citations.length,
+							totalTokens: response.usage.total_tokens,
+							cost,
+						},
+						tags: ["perplexity", model],
+					})
+					.then((res) => {
+						if (!res.success) {
+							console.warn(`Failed to store Perplexity result in RAG: ${res.error}`)
+						}
+					})
+					.catch((err) => {
+						console.warn(`Error storing Perplexity result in RAG:`, err)
+					})
+					.finally(() => {
+						ragStorage.close()
+					})
+			}
 
 			// Handle images if requested (images included in output for now)
 			// TODO: Add proper attachment support with full metadata
