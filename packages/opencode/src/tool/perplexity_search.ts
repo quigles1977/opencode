@@ -68,7 +68,7 @@ export const PerplexitySearchTool = Tool.define("perplexity_search", {
 		const fetchContent = params.fetchContent ?? false
 		const maxContentFetches = params.maxContentFetches ?? 3
 		const deepResearch = params.deepResearch ?? false
-		const maxIterations = params.maxIterations ?? cfg.perplexity?.deepResearch?.maxIterations ?? 3
+		const maxIterations = params.maxIterations ?? cfg.perplexity?.deepResearch?.maxIterations ?? 10
 		const timeout =
 			Math.min((params.timeout ?? cfg.perplexity?.defaults?.timeout ?? 60) * 1000, MAX_TIMEOUT)
 
