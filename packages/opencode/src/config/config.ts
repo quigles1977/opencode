@@ -17,6 +17,7 @@ import { Instance } from "../project/instance"
 import { LSPServer } from "../lsp/server"
 import { BunProc } from "@/bun"
 import { Installation } from "@/installation"
+import { RagConfig } from "../rag/config"
 
 export namespace Config {
   const log = Log.create({ service: "config" })
@@ -623,6 +624,7 @@ export namespace Config {
         })
         .optional()
         .describe("Perplexity AI search tool configuration"),
+      rag: RagConfig.optional().describe("RAG (Retrieval-Augmented Generation) knowledge base configuration"),
     })
     .strict()
     .meta({
