@@ -148,7 +148,7 @@ export const PerplexitySearchTool = Tool.define("perplexity_search", {
 								query: data.query,
 								status: data.status,
 								citationsFound: data.citationsFound,
-								totalCitations: result?.allCitations?.length || 0,
+								totalCitations: data.citationsFound || 0,
 							},
 						})
 					},
