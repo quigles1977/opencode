@@ -51,13 +51,10 @@ export const WriteTool = Tool.define("write", {
     let output = ""
     await LSP.touchFile(filepath, true)
     const diagnostics = await LSP.diagnostics()
-    for (const [file, issues] of Object.entries(diagnostics)) {
-      if (issues.length === 0) continue
-      if (file === filepath) {
-        output += `\nThis file has errors, please fix\n<file_diagnostics>\n${issues.map(LSP.Diagnostic.pretty).join("\n")}\n</file_diagnostics>\n`
-        continue
-      }
-      output += `\n<project_diagnostics>\n${file}\n${issues.map(LSP.Diagnostic.pretty).join("\n")}\n</project_diagnostics>\n`
+    // Only show diagnostics for the current file being written
+    const currentFileIssues = diagnostics[filepath]
+    if (currentFileIssues && currentFileIssues.length > 0) {
+      output += `\nThis file has errors, please fix\n<file_diagnostics>\n${currentFileIssues.map(LSP.Diagnostic.pretty).join("\n")}\n</file_diagnostics>\n`
     }
 
     return {
