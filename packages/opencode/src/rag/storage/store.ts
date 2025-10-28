@@ -119,6 +119,21 @@ export class RagStorage {
         }
       }
 
+      // Check for existing document with same source_url to avoid duplicates
+      const existingCheck = await this.db.query(
+        `SELECT id FROM documents WHERE source_url = $1 LIMIT 1`,
+        [params.sourceUrl]
+      )
+
+      if (existingCheck.rows.length > 0) {
+        return {
+          success: true,
+          documentIds: [existingCheck.rows[0].id],
+          chunkCount: 0,
+          error: "Document with this source_url already exists (skipped)",
+        }
+      }
+
       // Chunk the content
       const chunks = chunkText(params.content, {
         chunkSize: this.config.storage.chunkSize,
