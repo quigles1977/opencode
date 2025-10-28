@@ -31,11 +31,11 @@ export const RagConfig = z.object({
   reranking: z
     .object({
       enabled: z.boolean().default(true),
-      model: z.enum(["bge-reranker-base", "jina-reranker-v1-turbo-en"]).default("bge-reranker-base"),
+      model: z.enum(["qllama/bge-reranker-v2-m3", "qllama/bge-reranker-large", "jina-reranker-v1-turbo-en"]).default("qllama/bge-reranker-v2-m3"),
     })
     .default(() => ({
       enabled: true,
-      model: "bge-reranker-base" as const,
+      model: "qllama/bge-reranker-v2-m3" as const,
     })),
   storage: z
     .object({
@@ -85,7 +85,7 @@ export const DEFAULT_RAG_CONFIG: RagConfig = {
   },
   reranking: {
     enabled: true,
-    model: "bge-reranker-base",
+    model: "qllama/bge-reranker-v2-m3",
   },
   storage: {
     autoStore: true,
