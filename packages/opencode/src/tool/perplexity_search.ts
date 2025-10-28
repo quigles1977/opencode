@@ -205,7 +205,7 @@ export const PerplexitySearchTool = Tool.define("perplexity_search", {
 				if (cfg.rag?.enabled && cfg.rag?.storage?.autoStore) {
 					const ragStorage = createRagStorage(cfg.rag || DEFAULT_RAG_CONFIG)
 
-					// Store in background (don't block the response)
+					// Store the main deep research report
 					ragStorage
 						.storeDocument({
 							content: output,
@@ -231,9 +231,39 @@ export const PerplexitySearchTool = Tool.define("perplexity_search", {
 						.catch((err) => {
 							console.warn(`Error storing Perplexity Deep Research in RAG:`, err)
 						})
-						.finally(() => {
-							ragStorage.close()
-						})
+
+					// Store individual fetched citation contents if available
+					if (fetchedContent) {
+						const citationPromises = []
+						for (const content of fetchedContent) {
+							if (!(content instanceof Error)) {
+								citationPromises.push(
+									ragStorage
+										.storeDocument({
+											content: content.content,
+											sourceType: "webfetch",
+											sourceUrl: content.url,
+											title: content.title,
+											sessionId: ctx.sessionID,
+											metadata: {
+												fetchedFrom: "perplexity_deep_research",
+												originalQuery: params.query,
+												wordCount: content.wordCount,
+												fetchedAt: content.fetchedAt,
+											},
+											tags: ["perplexity_citation", "deep_research", "webfetch"],
+										})
+										.catch((err) => {
+											console.warn(`Failed to store citation ${content.url} in RAG:`, err)
+										})
+								)
+							}
+						}
+						// Wait for all citation storage operations to complete before closing
+						Promise.all(citationPromises).finally(() => ragStorage.close())
+					} else {
+						ragStorage.close()
+					}
 				}
 
 				return {
@@ -310,7 +340,7 @@ export const PerplexitySearchTool = Tool.define("perplexity_search", {
 			if (cfg.rag?.enabled && cfg.rag?.storage?.autoStore) {
 				const ragStorage = createRagStorage(cfg.rag || DEFAULT_RAG_CONFIG)
 
-				// Store in background (don't block the response)
+				// Store the main synthesized report
 				ragStorage
 					.storeDocument({
 						content: output,
@@ -335,9 +365,39 @@ export const PerplexitySearchTool = Tool.define("perplexity_search", {
 					.catch((err) => {
 						console.warn(`Error storing Perplexity result in RAG:`, err)
 					})
-					.finally(() => {
-						ragStorage.close()
-					})
+
+				// Store individual fetched citation contents if available
+				if (fetchedContent) {
+					const citationPromises = []
+					for (const content of fetchedContent) {
+						if (!(content instanceof Error)) {
+							citationPromises.push(
+								ragStorage
+									.storeDocument({
+										content: content.content,
+										sourceType: "webfetch",
+										sourceUrl: content.url,
+										title: content.title,
+										sessionId: ctx.sessionID,
+										metadata: {
+											fetchedFrom: "perplexity_citation",
+											originalQuery: params.query,
+											wordCount: content.wordCount,
+											fetchedAt: content.fetchedAt,
+										},
+										tags: ["perplexity_citation", "webfetch"],
+									})
+									.catch((err) => {
+										console.warn(`Failed to store citation ${content.url} in RAG:`, err)
+									})
+							)
+						}
+					}
+					// Wait for all citation storage operations to complete before closing
+					Promise.all(citationPromises).finally(() => ragStorage.close())
+				} else {
+					ragStorage.close()
+				}
 			}
 
 			// Handle images if requested (images included in output for now)
