@@ -57,9 +57,11 @@ This will:
 - Check if Ollama is running
 - Download required models:
   - `nomic-embed-text` (274MB) - embeddings (required)
-  - `qllama/bge-reranker-v2-m3` (635MB) - reranking (optional, not yet implemented)
+  - `qllama/bge-reranker-v2-m3` (635MB) - reranking model (optional, for future use when Ollama adds reranking API)
 - Initialize embedded PostgreSQL database
 - Create vector indexes
+
+Note: Reranking is currently implemented using hybrid scoring (vector similarity + keyword matching + length normalization) since Ollama doesn't yet provide a dedicated reranking API.
 
 ### 2. Enable in Config
 
@@ -254,8 +256,8 @@ kb_search({
 - `hybridSearch`: Use hybrid search (default: true)
 
 **Reranking:**
-- `enabled`: Enable reranking (default: false, feature not yet implemented)
-- `model`: Reranking model (default: `"qllama/bge-reranker-v2-m3"`)
+- `enabled`: Enable reranking (default: true)
+- `model`: Reranking model (default: `"qllama/bge-reranker-v2-m3"`, note: Ollama doesn't support reranking API yet, uses hybrid scoring instead)
 
 ## CLI Commands
 

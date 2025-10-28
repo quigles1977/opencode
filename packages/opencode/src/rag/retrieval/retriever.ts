@@ -230,19 +230,53 @@ export class RagRetriever {
   }
 
   /**
-   * Rerank results using a reranking model
-   * Note: Placeholder for now - full implementation requires Ollama reranking support
+   * Rerank results using query-document relevance scoring
+   *
+   * Note: Ollama doesn't currently support dedicated reranking models API.
+   * This implementation uses a hybrid scoring approach:
+   * - Vector similarity (from initial retrieval)
+   * - Query term matching (keyword overlap)
+   * - Document length normalization
    */
   private async rerank(query: string, documents: Document[]): Promise<Document[]> {
-    // TODO: Implement proper reranking with Ollama when available
-    // For now, just return documents as-is
-    // In the future, this would:
-    // 1. Generate reranking scores for each document
-    // 2. Re-sort documents by reranking score
-    // 3. Return reranked documents
+    if (documents.length === 0) return documents
 
-    // Note: Reranking is not yet implemented
-    return documents
+    const queryTerms = query.toLowerCase().split(/\s+/).filter(t => t.length > 2)
+
+    // Calculate reranking score for each document
+    const scored = documents.map(doc => {
+      const content = doc.content.toLowerCase()
+      const metadata = doc.metadata as any
+
+      // Base score from vector similarity (already present in results)
+      const vectorScore = metadata.similarity || 0.5
+
+      // Term matching score: how many query terms appear in document
+      const matchingTerms = queryTerms.filter(term => content.includes(term)).length
+      const termScore = queryTerms.length > 0 ? matchingTerms / queryTerms.length : 0
+
+      // Length normalization: prefer concise, relevant documents
+      const idealLength = 500 // characters
+      const lengthPenalty = Math.min(1, idealLength / Math.max(doc.content.length, idealLength))
+
+      // Combine scores with weights
+      const finalScore = (
+        vectorScore * 0.6 +        // 60% vector similarity
+        termScore * 0.3 +           // 30% term matching
+        lengthPenalty * 0.1         // 10% length preference
+      )
+
+      return {
+        doc,
+        score: finalScore
+      }
+    })
+
+    // Sort by reranking score (descending)
+    scored.sort((a, b) => b.score - a.score)
+
+    // Return reranked documents
+    return scored.map(item => item.doc)
   }
 
   /**
