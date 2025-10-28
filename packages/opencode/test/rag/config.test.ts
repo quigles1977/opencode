@@ -15,7 +15,7 @@ test("RagConfig validates correct config", () => {
     },
     reranking: {
       enabled: true,
-      model: "bge-reranker-base" as const,
+      model: "qllama/bge-reranker-v2-m3" as const,
     },
     storage: {
       autoStore: true,
@@ -99,7 +99,7 @@ test("DEFAULT_RAG_CONFIG has correct structure", () => {
   expect(DEFAULT_RAG_CONFIG.embeddings.model).toBe("nomic-embed-text")
   expect(DEFAULT_RAG_CONFIG.embeddings.dimensions).toBe(768)
   expect(DEFAULT_RAG_CONFIG.reranking.enabled).toBe(true)
-  expect(DEFAULT_RAG_CONFIG.reranking.model).toBe("bge-reranker-base")
+  expect(DEFAULT_RAG_CONFIG.reranking.model).toBe("qllama/bge-reranker-v2-m3")
   expect(DEFAULT_RAG_CONFIG.storage.autoStore).toBe(true)
   expect(DEFAULT_RAG_CONFIG.storage.chunkSize).toBe(8000)
   expect(DEFAULT_RAG_CONFIG.retrieval.defaultTopK).toBe(5)
@@ -122,7 +122,7 @@ test("RagConfig accepts external database with connection string", () => {
     },
     reranking: {
       enabled: true,
-      model: "bge-reranker-base" as const,
+      model: "qllama/bge-reranker-v2-m3" as const,
     },
     storage: {
       autoStore: true,
