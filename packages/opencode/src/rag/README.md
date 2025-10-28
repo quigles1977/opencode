@@ -55,9 +55,9 @@ opencode kb init
 
 This will:
 - Check if Ollama is running
-- Download required models (~909MB):
-  - `nomic-embed-text` (274MB) - embeddings
-  - `qllama/bge-reranker-v2-m3` (635MB) - reranking
+- Download required models:
+  - `nomic-embed-text` (274MB) - embeddings (required)
+  - `qllama/bge-reranker-v2-m3` (635MB) - reranking (optional, not yet implemented)
 - Initialize embedded PostgreSQL database
 - Create vector indexes
 
@@ -254,7 +254,7 @@ kb_search({
 - `hybridSearch`: Use hybrid search (default: true)
 
 **Reranking:**
-- `enabled`: Enable reranking (default: true)
+- `enabled`: Enable reranking (default: false, feature not yet implemented)
 - `model`: Reranking model (default: `"qllama/bge-reranker-v2-m3"`)
 
 ## CLI Commands

@@ -241,7 +241,7 @@ export class RagRetriever {
     // 2. Re-sort documents by reranking score
     // 3. Return reranked documents
 
-    console.log(`Reranking ${documents.length} documents (feature coming soon)`)
+    // Note: Reranking is not yet implemented
     return documents
   }
 
