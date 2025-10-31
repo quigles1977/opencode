@@ -28,6 +28,7 @@ import { ProviderTransform } from "../provider/transform"
 import { SystemPrompt } from "./system"
 import { Plugin } from "../plugin"
 import { SessionRetry } from "./retry"
+import { RateLimit } from "../provider/rate-limit"
 
 import PROMPT_PLAN from "../session/prompt/plan.txt"
 import BUILD_SWITCH from "../session/prompt/build-switch.txt"
@@ -262,6 +263,14 @@ export namespace SessionPrompt {
       await using _ = defer(async () => {
         await processor.end()
       })
+
+      // Apply rate limiting if configured
+      const rateLimitMs = model.info.options?.rateLimitMs
+      if (rateLimitMs && typeof rateLimitMs === "number") {
+        const rateLimitKey = `${model.providerID}:${model.modelID}`
+        await RateLimit.wait(rateLimitKey, rateLimitMs)
+      }
+
       const doStream = () =>
         streamText({
           onError(error) {
