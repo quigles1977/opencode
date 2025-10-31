@@ -4,9 +4,11 @@ import { vector } from "@electric-sql/pglite/vector"
 import {
   initializeSchema,
   dropSchema,
-  insertDocument,
+  insertParentDocument,
+  insertDocumentChunk,
   searchSimilar,
-  type InsertDocumentParams,
+  type InsertParentDocumentParams,
+  type InsertDocumentChunkParams,
 } from "../../src/rag/db/schema"
 import { tmpdir } from "os"
 import { join } from "path"
@@ -33,10 +35,16 @@ afterAll(async () => {
   rmSync(testDbPath, { recursive: true, force: true })
 })
 
-test("schema initializes without error", async () => {
-  const result = await db.query("SELECT tablename FROM pg_tables WHERE tablename = 'documents'")
+test("schema initializes with parent_documents table", async () => {
+  const result = await db.query("SELECT tablename FROM pg_tables WHERE tablename = 'parent_documents'")
   expect(result.rows.length).toBe(1)
-  expect((result.rows[0] as any).tablename).toBe("documents")
+  expect((result.rows[0] as any).tablename).toBe("parent_documents")
+})
+
+test("schema initializes with document_chunks table", async () => {
+  const result = await db.query("SELECT tablename FROM pg_tables WHERE tablename = 'document_chunks'")
+  expect(result.rows.length).toBe(1)
+  expect((result.rows[0] as any).tablename).toBe("document_chunks")
 })
 
 test("schema has vector extension enabled", async () => {
@@ -44,11 +52,10 @@ test("schema has vector extension enabled", async () => {
   expect(result.rows.length).toBeGreaterThan(0)
 })
 
-test("insertDocument stores document successfully", async () => {
-  const doc: InsertDocumentParams = {
-    id: "test-doc-1",
-    content: "This is a test document",
-    embedding: new Array(768).fill(0).map(() => Math.random()),
+test("insertParentDocument stores parent document successfully", async () => {
+  const doc: InsertParentDocumentParams = {
+    id: "test-parent-1",
+    content: "This is a full markdown document with complete content",
     metadata: { test: true },
     source_type: "webfetch",
     source_url: "https://example.com",
@@ -57,30 +64,55 @@ test("insertDocument stores document successfully", async () => {
     tags: ["test", "example"],
   }
 
-  await insertDocument(db, doc)
+  await insertParentDocument(db, doc)
 
-  const result = await db.query("SELECT * FROM documents WHERE id = $1", [doc.id])
+  const result = await db.query("SELECT * FROM parent_documents WHERE id = $1", [doc.id])
   expect(result.rows.length).toBe(1)
   expect((result.rows[0] as any).title).toBe("Test Document")
   expect((result.rows[0] as any).source_type).toBe("webfetch")
 })
 
-test("searchSimilar finds similar documents", async () => {
-  // Insert a document with known embedding
-  const embedding = new Array(768).fill(0).map((_, i) => (i < 10 ? 1 : 0))
-  const doc: InsertDocumentParams = {
-    id: "test-doc-2",
-    content: "Searchable document",
-    embedding,
+test("insertDocumentChunk stores chunk with parent reference", async () => {
+  const chunk: InsertDocumentChunkParams = {
+    id: "test-chunk-1",
+    parent_document_id: "test-parent-1",
+    chunk_index: 0,
+    content: "This is a small chunk",
+    embedding: new Array(768).fill(0).map(() => Math.random()),
+  }
+
+  await insertDocumentChunk(db, chunk)
+
+  const result = await db.query("SELECT * FROM document_chunks WHERE id = $1", [chunk.id])
+  expect(result.rows.length).toBe(1)
+  expect((result.rows[0] as any).parent_document_id).toBe("test-parent-1")
+  expect((result.rows[0] as any).chunk_index).toBe(0)
+})
+
+test("searchSimilar searches chunks and returns parent documents", async () => {
+  // Insert a parent document
+  const parentDoc: InsertParentDocumentParams = {
+    id: "test-parent-2",
+    content: "This is the full content of a searchable document with lots of detail",
     metadata: {},
     source_type: "perplexity",
     source_url: "https://perplexity.ai",
-    title: "Searchable",
+    title: "Searchable Document",
     session_id: "test-session-2",
     tags: ["search"],
   }
+  await insertParentDocument(db, parentDoc)
 
-  await insertDocument(db, doc)
+  // Insert chunks for the parent
+  const embedding = new Array(768).fill(0).map((_, i) => (i < 10 ? 1 : 0))
+  const chunk: InsertDocumentChunkParams = {
+    id: "test-chunk-2",
+    parent_document_id: "test-parent-2",
+    chunk_index: 0,
+    content: "searchable chunk",
+    embedding,
+  }
+  await insertDocumentChunk(db, chunk)
 
   // Search with similar embedding
   const searchEmbedding = new Array(768).fill(0).map((_, i) => (i < 10 ? 0.9 : 0))
@@ -91,9 +123,49 @@ test("searchSimilar finds similar documents", async () => {
   })
 
   expect(results.length).toBeGreaterThan(0)
-  const found = results.find((r) => r.id === "test-doc-2")
+  const found = results.find((r) => r.id === "test-parent-2")
   expect(found).toBeDefined()
-  expect(found?.title).toBe("Searchable")
+  expect(found?.title).toBe("Searchable Document")
+  expect(found?.content).toBe("This is the full content of a searchable document with lots of detail")
+})
+
+test("searchSimilar returns unique parent documents only", async () => {
+  // Insert a parent with multiple chunks
+  const parentDoc: InsertParentDocumentParams = {
+    id: "test-parent-3",
+    content: "Full document content",
+    metadata: {},
+    source_type: "webfetch",
+    source_url: "https://example.com/multi",
+    title: "Multi-Chunk Doc",
+    session_id: "test-session-3",
+    tags: [],
+  }
+  await insertParentDocument(db, parentDoc)
+
+  // Insert 3 chunks with similar embeddings
+  const embedding = new Array(768).fill(0).map((_, i) => (i < 20 ? 1 : 0))
+  for (let i = 0; i < 3; i++) {
+    const chunk: InsertDocumentChunkParams = {
+      id: `test-chunk-3-${i}`,
+      parent_document_id: "test-parent-3",
+      chunk_index: i,
+      content: `chunk ${i}`,
+      embedding,
+    }
+    await insertDocumentChunk(db, chunk)
+  }
+
+  // Search should return parent only once
+  const searchEmbedding = new Array(768).fill(0).map((_, i) => (i < 20 ? 0.95 : 0))
+  const results = await searchSimilar(db, {
+    embedding: searchEmbedding,
+    limit: 10,
+    threshold: 0.5,
+  })
+
+  const parentMatches = results.filter((r) => r.id === "test-parent-3")
+  expect(parentMatches.length).toBe(1) // Only one parent document returned
 })
 
 test("searchSimilar filters by source_type", async () => {
@@ -111,12 +183,11 @@ test("searchSimilar filters by source_type", async () => {
 })
 
 test("searchSimilar respects limit parameter", async () => {
-  // Insert multiple documents
+  // Insert multiple parent documents with chunks
   for (let i = 0; i < 5; i++) {
-    const doc: InsertDocumentParams = {
-      id: `test-doc-limit-${i}`,
-      content: `Document ${i}`,
-      embedding: new Array(768).fill(0).map(() => Math.random()),
+    const parentDoc: InsertParentDocumentParams = {
+      id: `test-parent-limit-${i}`,
+      content: `Full document ${i} content`,
       metadata: {},
       source_type: "webfetch",
       source_url: `https://example.com/${i}`,
@@ -124,7 +195,16 @@ test("searchSimilar respects limit parameter", async () => {
       session_id: "test-session-limit",
       tags: [],
     }
-    await insertDocument(db, doc)
+    await insertParentDocument(db, parentDoc)
+
+    const chunk: InsertDocumentChunkParams = {
+      id: `test-chunk-limit-${i}`,
+      parent_document_id: `test-parent-limit-${i}`,
+      chunk_index: 0,
+      content: `chunk ${i}`,
+      embedding: new Array(768).fill(0).map(() => Math.random()),
+    }
+    await insertDocumentChunk(db, chunk)
   }
 
   const results = await searchSimilar(db, {
@@ -136,11 +216,14 @@ test("searchSimilar respects limit parameter", async () => {
   expect(results.length).toBeLessThanOrEqual(3)
 })
 
-test("dropSchema removes documents table", async () => {
+test("dropSchema removes both tables", async () => {
   await dropSchema(db)
 
-  const result = await db.query("SELECT tablename FROM pg_tables WHERE tablename = 'documents'")
-  expect(result.rows.length).toBe(0)
+  const parentResult = await db.query("SELECT tablename FROM pg_tables WHERE tablename = 'parent_documents'")
+  expect(parentResult.rows.length).toBe(0)
+
+  const chunkResult = await db.query("SELECT tablename FROM pg_tables WHERE tablename = 'document_chunks'")
+  expect(chunkResult.rows.length).toBe(0)
 
   // Reinitialize for other tests
   await initializeSchema(db)

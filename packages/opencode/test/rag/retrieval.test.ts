@@ -122,3 +122,46 @@ test.skip("RagRetriever retrieve respects similarity threshold", async () => {
   // With high threshold, we expect fewer or no results
   expect(result.totalResults).toBeGreaterThanOrEqual(0)
 })
+
+test.skip("RagRetriever retrieve with reranking enabled", async () => {
+  const retriever = createRagRetriever({
+    ...DEFAULT_RAG_CONFIG,
+    enabled: true,
+    reranking: {
+      enabled: true,
+      model: "qllama/bge-reranker-v2-m3",
+    },
+  })
+
+  const result = await retriever.retrieve({
+    query: "test query with specific keywords",
+    topK: 5,
+    rerank: true,
+  })
+
+  await retriever.close()
+
+  expect(result.documents).toBeDefined()
+  expect(result.processingTimeMs).toBeGreaterThan(0)
+})
+
+test.skip("RagRetriever retrieve without reranking", async () => {
+  const retriever = createRagRetriever({
+    ...DEFAULT_RAG_CONFIG,
+    enabled: true,
+    reranking: {
+      enabled: false,
+      model: "qllama/bge-reranker-v2-m3",
+    },
+  })
+
+  const result = await retriever.retrieve({
+    query: "test query",
+    topK: 5,
+    rerank: false,
+  })
+
+  await retriever.close()
+
+  expect(result.documents).toBeDefined()
+})

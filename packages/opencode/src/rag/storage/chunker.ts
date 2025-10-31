@@ -38,6 +38,22 @@ export function chunkText(text: string, options: ChunkOptions): string[] {
   const splits = splitTextRecursive(text, separators)
 
   for (const split of splits) {
+    // If this single split is larger than chunk size, split it further
+    if (split.length > chunkSize) {
+      // Save current chunk if any
+      if (currentChunk.length > 0) {
+        chunks.push(currentChunk.trim())
+        currentChunk = ""
+      }
+
+      // Hard split this oversized piece into chunkSize pieces
+      for (let i = 0; i < split.length; i += chunkSize) {
+        const piece = split.slice(i, i + chunkSize)
+        chunks.push(piece)
+      }
+      continue
+    }
+
     // If adding this split would exceed chunk size
     if (currentChunk.length + split.length > chunkSize) {
       if (currentChunk.length > 0) {
@@ -47,7 +63,6 @@ export function chunkText(text: string, options: ChunkOptions): string[] {
         const overlapText = getOverlapText(currentChunk, maxOverlap)
         currentChunk = overlapText + split
       } else {
-        // Single split is too large, force it
         currentChunk = split
       }
     } else {

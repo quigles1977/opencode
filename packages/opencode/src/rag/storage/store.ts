@@ -4,7 +4,7 @@ import { homedir } from "os"
 import { existsSync } from "fs"
 import type { RagConfig } from "../config"
 import { createEmbeddingsClient } from "../embeddings/ollama"
-import { insertDocument, type InsertDocumentParams, type Database } from "../db/schema"
+import { insertParentDocument, insertDocumentChunk, type InsertParentDocumentParams, type InsertDocumentChunkParams, type Database } from "../db/schema"
 import { ulid } from "ulid"
 import { chunkText } from "./chunker"
 
@@ -58,9 +58,14 @@ export class RagStorage {
     }
 
     if (this.config.database.type === "embedded") {
-      this.db = new PGlite(dbPath, {
+      const pglite = new PGlite(dbPath, {
         extensions: { vector },
-      }) as Database
+      })
+
+      // Ensure PGlite is ready before setting this.db
+      await pglite.waitReady
+
+      this.db = pglite as Database
     } else {
       // External PostgreSQL connection
       throw new Error("External PostgreSQL support not yet implemented")
@@ -121,7 +126,7 @@ export class RagStorage {
 
       // Check for existing document with same source_url to avoid duplicates
       const existingCheck = await this.db.query(
-        `SELECT id FROM documents WHERE source_url = $1 LIMIT 1`,
+        `SELECT id FROM parent_documents WHERE source_url = $1 LIMIT 1`,
         [params.sourceUrl]
       )
 
@@ -134,47 +139,81 @@ export class RagStorage {
         }
       }
 
-      // Chunk the content
+      // Generate parent document ID
+      const parentDocumentId = ulid()
+
+      // Store the full parent document first
+      const parentDoc: InsertParentDocumentParams = {
+        id: parentDocumentId,
+        content: params.content, // Full markdown content
+        metadata: params.metadata || {},
+        source_type: params.sourceType,
+        source_url: params.sourceUrl,
+        title: params.title,
+        session_id: params.sessionId,
+        tags: params.tags || [],
+      }
+
+      await insertParentDocument(this.db, parentDoc)
+
+      // Chunk the content for vector search
       const chunks = chunkText(params.content, {
         chunkSize: this.config.storage.chunkSize,
         maxOverlap: this.config.storage.maxChunkOverlap,
       })
 
-      // Generate embeddings for all chunks
-      const embeddings = await this.embeddings.embedBatch(chunks)
+      // Generate embeddings for all chunks (with recursive splitting for oversized chunks)
+      const chunksWithEmbeddings: Array<{ chunk: string; embedding: number[] }> = []
 
-      // Store each chunk as a separate document
-      const documentIds: string[] = []
+      for (const chunk of chunks) {
+        try {
+          const result = await this.embeddings.embed(chunk)
+          chunksWithEmbeddings.push({ chunk, embedding: result.embedding })
+        } catch (error) {
+          const errMsg = error instanceof Error ? error.message : String(error)
+          if (errMsg.includes('context length') || errMsg.includes('input length exceeds')) {
+            // Chunk is too large - split it in half and retry
+            const halfSize = Math.floor(chunk.length / 2)
+            const firstHalf = chunk.slice(0, halfSize)
+            const secondHalf = chunk.slice(halfSize)
 
-      for (let i = 0; i < chunks.length; i++) {
-        const documentId = ulid()
-        const chunk = chunks[i]
-        const embedding = embeddings[i].embedding
+            console.warn(`[RAG] Chunk (${chunk.length} chars) exceeds token limit - splitting in half`)
 
-        const doc: InsertDocumentParams = {
-          id: documentId,
+            try {
+              const result1 = await this.embeddings.embed(firstHalf)
+              chunksWithEmbeddings.push({ chunk: firstHalf, embedding: result1.embedding })
+
+              const result2 = await this.embeddings.embed(secondHalf)
+              chunksWithEmbeddings.push({ chunk: secondHalf, embedding: result2.embedding })
+            } catch (retryError) {
+              // Even half-sized chunks failed - skip this one
+              console.warn(`[RAG] Failed to embed chunk even after splitting - skipping`)
+            }
+          } else {
+            throw error
+          }
+        }
+      }
+
+      // Store vector chunks as signposts pointing to parent document
+      for (let i = 0; i < chunksWithEmbeddings.length; i++) {
+        const { chunk, embedding } = chunksWithEmbeddings[i]
+        const chunkId = ulid()
+
+        const chunkDoc: InsertDocumentChunkParams = {
+          id: chunkId,
+          parent_document_id: parentDocumentId,
+          chunk_index: i,
           content: chunk,
           embedding,
-          metadata: {
-            ...params.metadata,
-            chunkIndex: i,
-            totalChunks: chunks.length,
-            chunkSize: chunk.length,
-          },
-          source_type: params.sourceType,
-          source_url: params.sourceUrl,
-          title: chunks.length > 1 ? `${params.title} (part ${i + 1}/${chunks.length})` : params.title,
-          session_id: params.sessionId,
-          tags: params.tags || [],
         }
 
-        await insertDocument(this.db, doc)
-        documentIds.push(documentId)
+        await insertDocumentChunk(this.db, chunkDoc)
       }
 
       return {
         success: true,
-        documentIds,
+        documentIds: [parentDocumentId],
         chunkCount: chunks.length,
       }
     } catch (error) {
@@ -203,11 +242,11 @@ export class RagStorage {
       throw new Error("Database not initialized")
     }
 
-    const totalResult = await this.db.query("SELECT COUNT(*) as count FROM documents")
+    const totalResult = await this.db.query("SELECT COUNT(*) as count FROM parent_documents")
     const total = (totalResult.rows[0] as any).count
 
     const bySourceResult = await this.db.query(
-      "SELECT source_type, COUNT(*) as count FROM documents GROUP BY source_type",
+      "SELECT source_type, COUNT(*) as count FROM parent_documents GROUP BY source_type",
     )
     const bySource: Record<string, number> = {}
     for (const row of bySourceResult.rows) {
@@ -216,7 +255,7 @@ export class RagStorage {
     }
 
     const bySessionResult = await this.db.query(
-      "SELECT session_id, COUNT(*) as count FROM documents GROUP BY session_id",
+      "SELECT session_id, COUNT(*) as count FROM parent_documents GROUP BY session_id",
     )
     const bySession: Record<string, number> = {}
     for (const row of bySessionResult.rows) {

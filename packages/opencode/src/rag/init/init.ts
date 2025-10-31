@@ -158,8 +158,8 @@ export async function initializeRag(options: InitOptions): Promise<InitResult> {
       extensions: { vector },
     })
 
-    // Create schema
-    await initializeSchema(db)
+    // Create schema with configured dimensions
+    await initializeSchema(db, config.embeddings.dimensions)
 
     // Close database
     await db.close()
@@ -192,6 +192,10 @@ function getModelInfo(model: string): { size: string; description: string } {
     "mxbai-embed-large": {
       size: "~670MB",
       description: "MixedBread AI Large - Very high quality embeddings",
+    },
+    "bge-m3": {
+      size: "~1.2GB",
+      description: "BGE-M3 - Large context (8192 tokens) multilingual embeddings",
     },
     "bge-reranker-base": {
       size: "~278MB",

@@ -88,7 +88,7 @@ test.skip("RagStorage storeDocument stores with chunking", async () => {
 
   expect(result.success).toBe(true)
   expect(result.chunkCount).toBeGreaterThan(1) // Should be chunked
-  expect(result.documentIds.length).toBe(result.chunkCount)
+  expect(result.documentIds.length).toBe(1) // Only 1 parent document ID returned
 })
 
 test.skip("RagStorage getStats returns statistics", async () => {
@@ -111,4 +111,83 @@ test.skip("RagStorage getStats returns statistics", async () => {
   expect(typeof stats.totalDocuments).toBe("number")
 
   await storage.close()
+})
+
+test.skip("RagStorage deduplication prevents duplicate source URLs", async () => {
+  const storage = createRagStorage({
+    ...DEFAULT_RAG_CONFIG,
+    enabled: true,
+    database: {
+      ...DEFAULT_RAG_CONFIG.database,
+      path: testDbPath,
+    },
+  })
+
+  const docParams = {
+    content: "Test content for deduplication",
+    sourceType: "webfetch" as const,
+    sourceUrl: "https://example.com/unique-url",
+    title: "Test Document",
+    sessionId: "test-session-456",
+    metadata: { test: true },
+    tags: ["test"],
+  }
+
+  // Store document first time
+  const result1 = await storage.storeDocument(docParams)
+  expect(result1.success).toBe(true)
+  expect(result1.chunkCount).toBeGreaterThan(0)
+  const firstDocId = result1.documentIds[0]
+
+  // Try to store same URL again
+  const result2 = await storage.storeDocument({
+    ...docParams,
+    content: "Different content but same URL", // Different content
+  })
+
+  await storage.close()
+
+  // Should return success but with existing ID and 0 chunks
+  expect(result2.success).toBe(true)
+  expect(result2.chunkCount).toBe(0)
+  expect(result2.documentIds[0]).toBe(firstDocId)
+  expect(result2.error).toContain("already exists")
+})
+
+test.skip("RagStorage allows different source URLs", async () => {
+  const storage = createRagStorage({
+    ...DEFAULT_RAG_CONFIG,
+    enabled: true,
+    database: {
+      ...DEFAULT_RAG_CONFIG.database,
+      path: testDbPath,
+    },
+  })
+
+  const baseParams = {
+    content: "Test content",
+    sourceType: "webfetch" as const,
+    title: "Test Document",
+    sessionId: "test-session-789",
+    metadata: { test: true },
+    tags: ["test"],
+  }
+
+  // Store first document
+  const result1 = await storage.storeDocument({
+    ...baseParams,
+    sourceUrl: "https://example.com/url1",
+  })
+
+  // Store different URL - should succeed
+  const result2 = await storage.storeDocument({
+    ...baseParams,
+    sourceUrl: "https://example.com/url2",
+  })
+
+  await storage.close()
+
+  expect(result1.success).toBe(true)
+  expect(result2.success).toBe(true)
+  expect(result1.documentIds[0]).not.toBe(result2.documentIds[0])
 })

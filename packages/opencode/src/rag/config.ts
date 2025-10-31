@@ -19,7 +19,7 @@ export const RagConfig = z.object({
     })),
   embeddings: z
     .object({
-      model: z.enum(["nomic-embed-text", "mxbai-embed-large"]).default("nomic-embed-text"),
+      model: z.enum(["nomic-embed-text", "mxbai-embed-large", "bge-m3"]).default("nomic-embed-text"),
       ollamaUrl: z.string().default("http://localhost:11434"),
       dimensions: z.number().default(768),
     })

@@ -69,7 +69,7 @@ export const KnowledgeBaseSearchTool = Tool.define("kb_search", {
       }
 
       // Validate and cap topK
-      const topK = Math.min(params.topK ?? 5, 20)
+      const topK = Math.min(params.topK ?? 2, 20) // Default to 2 most relevant docs to avoid overwhelming with large content
       const threshold = params.similarityThreshold ?? cfg.rag.retrieval.similarityThreshold
 
       // Perform search
@@ -99,19 +99,17 @@ export const KnowledgeBaseSearchTool = Tool.define("kb_search", {
       } else {
         output += `---\n\n`
 
+        // Each document is now a complete parent document (not chunks)
         for (let i = 0; i < result.documents.length; i++) {
           const doc = result.documents[i]
+
           output += `## Result ${i + 1}: ${doc.title}\n\n`
           output += `**Source:** ${doc.source_type}\n`
           output += `**URL:** ${doc.source_url}\n`
           output += `**Stored:** ${new Date(doc.timestamp).toLocaleString()}\n`
 
           if (doc.metadata && Object.keys(doc.metadata).length > 0) {
-            // Show relevant metadata
             const meta = doc.metadata as any
-            if (meta.chunkIndex !== undefined) {
-              output += `**Chunk:** ${meta.chunkIndex + 1}/${meta.totalChunks}\n`
-            }
             if (meta.citationsCount) {
               output += `**Citations:** ${meta.citationsCount}\n`
             }
@@ -125,9 +123,7 @@ export const KnowledgeBaseSearchTool = Tool.define("kb_search", {
           }
 
           output += `\n### Content\n\n`
-          // Truncate very long content
-          const content = doc.content.length > 2000 ? doc.content.slice(0, 2000) + "..." : doc.content
-          output += content + `\n\n`
+          output += doc.content + `\n\n`
           output += `---\n\n`
         }
       }
@@ -138,6 +134,27 @@ export const KnowledgeBaseSearchTool = Tool.define("kb_search", {
       output += `- Filter by source type for targeted searches\n`
       output += `- Adjust topK to get more or fewer results\n`
       output += `- Use sessionOnly to search within current session\n`
+
+      // Log full output to file for debugging (since TUI captures console)
+      const fs = require('fs')
+      const logPath = require('os').homedir() + '/.opencode/kb_search_debug.log'
+      const timestamp = new Date().toISOString()
+      const debugOutput = `
+========== KB SEARCH OUTPUT @ ${timestamp} ==========
+Query: ${params.query}
+Total Results: ${result.totalResults}
+Processing Time: ${result.processingTimeMs}ms
+
+${output}
+
+========== END KB SEARCH OUTPUT ==========
+
+`
+      try {
+        fs.appendFileSync(logPath, debugOutput)
+      } catch (err) {
+        // Silent fail if can't write
+      }
 
       return {
         title: `Found ${result.totalResults} result(s) in ${result.processingTimeMs}ms`,

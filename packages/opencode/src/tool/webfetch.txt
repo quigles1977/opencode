@@ -1,6 +1,9 @@
 Fetch and analyze web content.
 
+- Automatically checks knowledge base first for cached content
 - Converts HTML to markdown
 - URL must be fully-formed (HTTP → HTTPS auto-upgrade)
 - Read-only, 15-min cache
 - Prefer other tools if they're more targeted
+
+If cached content is found, you'll receive it with metadata indicating it's from the knowledge base. You can then decide whether to use the cached content or inform the user that you can fetch fresh content if needed.

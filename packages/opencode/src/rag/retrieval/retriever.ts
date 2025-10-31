@@ -142,6 +142,9 @@ export class RagRetriever {
       documents = await this.rerank(options.query, documents)
     }
 
+    // Note: searchSimilar already returns full parent documents (not chunks)
+    // Each document is unique and contains the full markdown content
+
     const processingTimeMs = Date.now() - startTime
 
     return {
@@ -154,63 +157,62 @@ export class RagRetriever {
 
   /**
    * Hybrid search combining vector similarity and full-text search
+   * Searches chunks but returns unique parent documents
    */
   private async hybridSearch(params: SearchParams & { textQuery: string; sessionId?: string }): Promise<Document[]> {
     if (!this.db) throw new Error("Database not initialized")
 
     const { embedding, textQuery, limit = 10, threshold = 0.7, source_type, sessionId } = params
 
-    // Build query with both vector similarity and full-text search
+    // Build query with both vector similarity and full-text search on chunks
+    // Then join with parent documents and return unique parents
     let query = `
       WITH vector_search AS (
         SELECT
-          id, content, embedding::text, metadata, source_type,
-          source_url, title, timestamp, session_id, tags,
-          1 - (embedding <=> $1::vector) as vector_similarity
-        FROM documents
-        WHERE 1 - (embedding <=> $1::vector) > $2
+          dc.parent_document_id,
+          1 - (dc.embedding <=> $1::vector) as vector_similarity
+        FROM document_chunks dc
+        WHERE 1 - (dc.embedding <=> $1::vector) > $2
       ),
       text_search AS (
         SELECT
-          id, content, embedding::text, metadata, source_type,
-          source_url, title, timestamp, session_id, tags,
-          ts_rank(to_tsvector('english', content), plainto_tsquery('english', $3)) as text_rank
-        FROM documents
-        WHERE to_tsvector('english', content) @@ plainto_tsquery('english', $3)
+          dc.parent_document_id,
+          ts_rank(to_tsvector('english', dc.content), plainto_tsquery('english', $3)) as text_rank
+        FROM document_chunks dc
+        WHERE to_tsvector('english', dc.content) @@ plainto_tsquery('english', $3)
+      ),
+      combined_scores AS (
+        SELECT DISTINCT
+          COALESCE(v.parent_document_id, t.parent_document_id) as parent_document_id,
+          COALESCE(v.vector_similarity, 0) as vector_similarity,
+          COALESCE(t.text_rank, 0) as text_rank,
+          (COALESCE(v.vector_similarity, 0) * 0.7 + COALESCE(t.text_rank, 0) * 0.3) as combined_score
+        FROM vector_search v
+        FULL OUTER JOIN text_search t ON v.parent_document_id = t.parent_document_id
       )
-      SELECT DISTINCT
-        COALESCE(v.id, t.id) as id,
-        COALESCE(v.content, t.content) as content,
-        COALESCE(v.embedding, t.embedding) as embedding,
-        COALESCE(v.metadata, t.metadata) as metadata,
-        COALESCE(v.source_type, t.source_type) as source_type,
-        COALESCE(v.source_url, t.source_url) as source_url,
-        COALESCE(v.title, t.title) as title,
-        COALESCE(v.timestamp, t.timestamp) as timestamp,
-        COALESCE(v.session_id, t.session_id) as session_id,
-        COALESCE(v.tags, t.tags) as tags,
-        COALESCE(v.vector_similarity, 0) as vector_similarity,
-        COALESCE(t.text_rank, 0) as text_rank,
-        (COALESCE(v.vector_similarity, 0) * 0.7 + COALESCE(t.text_rank, 0) * 0.3) as combined_score
-      FROM vector_search v
-      FULL OUTER JOIN text_search t ON v.id = t.id
+      SELECT DISTINCT ON (pd.id)
+        pd.id, pd.content, pd.metadata, pd.source_type,
+        pd.source_url, pd.title, pd.timestamp, pd.session_id, pd.tags,
+        cs.combined_score as similarity
+      FROM combined_scores cs
+      JOIN parent_documents pd ON cs.parent_document_id = pd.id
     `
 
     const values: any[] = [JSON.stringify(embedding), threshold, textQuery]
 
     if (source_type) {
-      query += ` WHERE COALESCE(v.source_type, t.source_type) = $${values.length + 1}`
+      query += ` WHERE pd.source_type = $${values.length + 1}`
       values.push(source_type)
     }
 
     if (sessionId) {
       query += source_type
-        ? ` AND COALESCE(v.session_id, t.session_id) = $${values.length + 1}`
-        : ` WHERE COALESCE(v.session_id, t.session_id) = $${values.length + 1}`
+        ? ` AND pd.session_id = $${values.length + 1}`
+        : ` WHERE pd.session_id = $${values.length + 1}`
       values.push(sessionId)
     }
 
-    query += ` ORDER BY combined_score DESC LIMIT $${values.length + 1}`
+    query += ` ORDER BY pd.id, similarity DESC LIMIT $${values.length + 1}`
     values.push(limit)
 
     const result = await this.db.query(query, values)
@@ -218,7 +220,6 @@ export class RagRetriever {
     return result.rows.map((row: any) => ({
       id: row.id,
       content: row.content,
-      embedding: JSON.parse(row.embedding),
       metadata: row.metadata,
       source_type: row.source_type,
       source_url: row.source_url,
@@ -226,6 +227,7 @@ export class RagRetriever {
       timestamp: row.timestamp,
       session_id: row.session_id,
       tags: row.tags,
+      similarity: row.similarity,
     }))
   }
 

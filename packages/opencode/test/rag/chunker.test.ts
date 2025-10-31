@@ -131,3 +131,60 @@ test("chunkText handles code blocks", () => {
   const hasCodeBlock = chunks.some((chunk) => chunk.includes("```"))
   expect(hasCodeBlock).toBe(true)
 })
+
+test("chunkText enforces maximum chunk size for oversized splits", () => {
+  // Create a very long line with no natural break points (e.g., a long URL or code)
+  const longLine = "https://example.com/" + "a".repeat(500)
+  const text = `Short paragraph.\n\n${longLine}\n\nAnother short paragraph.`
+  const chunkSize = 200
+  const chunks = chunkText(text, { chunkSize, maxOverlap: 20 })
+
+  // All chunks should be at or under the chunk size
+  chunks.forEach((chunk, index) => {
+    expect(chunk.length).toBeLessThanOrEqual(chunkSize)
+  })
+
+  // The long line should have been split into multiple chunks
+  expect(chunks.length).toBeGreaterThan(2)
+
+  // Content should be preserved (no data loss)
+  const reconstructed = chunks.join("")
+  expect(reconstructed).toContain("example.com")
+  expect(reconstructed.length).toBeGreaterThan(longLine.length)
+})
+
+test("chunkText does not create oversized chunks from unsplittable content", () => {
+  // Simulate HTML/dense content that has no natural separators
+  const denseContent = "<div>" + "x".repeat(800) + "</div>"
+  const chunkSize = 200
+  const chunks = chunkText(denseContent, { chunkSize, maxOverlap: 20 })
+
+  // Every single chunk must be at or under chunkSize
+  chunks.forEach((chunk) => {
+    expect(chunk.length).toBeLessThanOrEqual(chunkSize)
+  })
+
+  // Content should be preserved across all chunks
+  const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0)
+  expect(totalLength).toBeGreaterThanOrEqual(denseContent.length * 0.95) // Allow for some trimming
+})
+
+test("chunkText handles mixed content with some oversized sections", () => {
+  const normalText = "This is a normal paragraph with good breaks. "
+  const oversizedSection = "NOSPACES" + "X".repeat(300) + "MORETEXT"
+  const text = normalText + oversizedSection + normalText
+
+  const chunkSize = 100
+  const chunks = chunkText(text, { chunkSize, maxOverlap: 10 })
+
+  // All chunks respect the size limit
+  chunks.forEach((chunk) => {
+    expect(chunk.length).toBeLessThanOrEqual(chunkSize)
+  })
+
+  // Normal text and oversized sections should all be present
+  const combined = chunks.join("")
+  expect(combined).toContain("normal paragraph")
+  expect(combined).toContain("NOSPACES")
+  expect(combined).toContain("MORETEXT")
+})

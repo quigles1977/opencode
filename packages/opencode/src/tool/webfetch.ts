@@ -1,6 +1,9 @@
 import z from "zod/v4"
 import { Tool } from "./tool"
 import TurndownService from "turndown"
+import { extract } from "@extractus/article-extractor"
+import { Readability } from "@mozilla/readability"
+import { JSDOM } from "jsdom"
 import DESCRIPTION from "./webfetch.txt"
 import { Config } from "../config/config"
 import { Permission } from "../permission"
@@ -20,13 +23,63 @@ export const WebFetchTool = Tool.define("webfetch", {
       .describe("The format to return the content in (text, markdown, or html)"),
     timeout: z.number().describe("Optional timeout in seconds (max 120)").optional(),
   }),
-  async execute(params, ctx) {
+  async execute(params, ctx): Promise<any> {
     // Validate URL
     if (!params.url.startsWith("http://") && !params.url.startsWith("https://")) {
       throw new Error("URL must start with http:// or https://")
     }
 
     const cfg = await Config.get()
+
+    // Check knowledge base first if RAG is enabled
+    if (cfg.rag?.enabled) {
+      try {
+        const { createRagRetriever } = await import("../rag/retrieval/retriever")
+        const retriever = createRagRetriever(cfg.rag)
+
+        const kbAvailable = await retriever.isAvailable()
+        if (kbAvailable) {
+          // Search for this URL in KB
+          const kbResults = await retriever.retrieve({
+            query: params.url,
+            topK: 10, // Increased to provide more comprehensive cached results
+            similarityThreshold: 0.85, // High threshold for URL matches
+            sourceType: "webfetch",
+            useHybridSearch: false, // Exact URL match preferred
+            rerank: false, // No need to rerank for URL lookup
+          })
+
+          if (kbResults.documents.length > 0) {
+            // Aggregate all cached chunks to provide complete content
+            const aggregatedContent = kbResults.documents.map((doc) => doc.content).join("\n\n")
+
+            const firstDoc = kbResults.documents[0]
+
+            // Return cached result with clear indication
+            return {
+              output: aggregatedContent,
+              title: `${params.url} (from knowledge base)`,
+              metadata: {
+                cached: true,
+                cachedAt: firstDoc.timestamp,
+                sourceUrl: firstDoc.source_url,
+                originalTitle: firstDoc.title,
+                chunksRetrieved: kbResults.documents.length,
+                averageSimilarity:
+                  kbResults.documents.reduce((sum, doc) => sum + (doc.similarity || 0), 0) / kbResults.documents.length,
+                note: "This content was previously fetched and stored in the knowledge base. If you need fresh content, you can ask the user if they want to re-fetch from the live URL.",
+              },
+            }
+          }
+        }
+
+        await retriever.close()
+      } catch (error) {
+        // KB check failed, continue with normal fetch
+        console.warn(`KB check failed for ${params.url}:`, error)
+      }
+    }
+
     if (cfg.permission?.webfetch === "ask")
       await Permission.ask({
         type: "webfetch",
@@ -103,7 +156,7 @@ export const WebFetchTool = Tool.define("webfetch", {
     switch (params.format) {
       case "markdown":
         if (contentType.includes("text/html")) {
-          processedContent = convertHTMLToMarkdown(content)
+          processedContent = await convertHTMLToMarkdown(content, params.url)
           contentForStorage = processedContent
         }
         break
@@ -157,7 +210,15 @@ export const WebFetchTool = Tool.define("webfetch", {
     return {
       output: processedContent,
       title,
-      metadata: {},
+      metadata: {
+        cached: false,
+        cachedAt: new Date(),
+        sourceUrl: params.url,
+        originalTitle: title,
+        chunksRetrieved: 0,
+        averageSimilarity: 0,
+        note: "Fresh fetch from URL",
+      },
     }
   },
 })
@@ -194,7 +255,54 @@ async function extractTextFromHTML(html: string) {
   return text.trim()
 }
 
-function convertHTMLToMarkdown(html: string): string {
+async function convertHTMLToMarkdown(html: string, url?: string): Promise<string> {
+  // Try @extractus/article-extractor first for best results on modern websites
+  if (url) {
+    try {
+      const article = await extract(url)
+
+      if (article && article.content && article.content.length > 100) {
+        // Convert HTML content to markdown
+        const turndownService = new TurndownService({
+          headingStyle: "atx",
+          hr: "---",
+          bulletListMarker: "-",
+          codeBlockStyle: "fenced",
+          emDelimiter: "*",
+        })
+        turndownService.remove(["script", "style", "meta", "link"])
+
+        return turndownService.turndown(article.content)
+      }
+    } catch (error) {
+      // Fall back to manual extraction (silent)
+    }
+
+    // Try Mozilla Readability as second option
+    try {
+      const dom = new JSDOM(html, { url })
+      const reader = new Readability(dom.window.document)
+      const article = reader.parse()
+
+      if (article) {
+        const turndownService = new TurndownService({
+          headingStyle: "atx",
+          hr: "---",
+          bulletListMarker: "-",
+          codeBlockStyle: "fenced",
+          emDelimiter: "*",
+        })
+        turndownService.remove(["script", "style", "meta", "link", "nav", "header", "footer", "aside"])
+        return turndownService.turndown(article.content || "")
+      }
+    } catch (error) {
+      // Fall back to regex-based extraction (silent)
+    }
+  }
+
+  // Fallback: Extract main content from HTML before conversion
+  const mainContent = extractMainContent(html)
+
   const turndownService = new TurndownService({
     headingStyle: "atx",
     hr: "---",
@@ -202,6 +310,35 @@ function convertHTMLToMarkdown(html: string): string {
     codeBlockStyle: "fenced",
     emDelimiter: "*",
   })
-  turndownService.remove(["script", "style", "meta", "link"])
-  return turndownService.turndown(html)
+  turndownService.remove(["script", "style", "meta", "link", "nav", "header", "footer", "aside"])
+  return turndownService.turndown(mainContent)
+}
+
+function extractMainContent(html: string): string {
+  // Try to extract main content area to avoid navigation/headers/footers
+  // This uses common patterns for main content containers
+
+  // Try main tag first
+  const mainMatch = html.match(/<main[^>]*>([\s\S]*?)<\/main>/i)
+  if (mainMatch) return mainMatch[1]
+
+  // Try article tag
+  const articleMatch = html.match(/<article[^>]*>([\s\S]*?)<\/article>/i)
+  if (articleMatch) return articleMatch[1]
+
+  // Try common content IDs
+  const contentIdPatterns = [
+    /<div[^>]*id=["']content["'][^>]*>([\s\S]*?)<\/div>/i,
+    /<div[^>]*id=["']main-content["'][^>]*>([\s\S]*?)<\/div>/i,
+    /<div[^>]*id=["']mw-content-text["'][^>]*>([\s\S]*?)<\/div>/i, // Wikipedia specific
+    /<div[^>]*class=["'][^"']*mw-parser-output[^"']*["'][^>]*>([\s\S]*?)<\/div>/i, // Wikipedia content
+  ]
+
+  for (const pattern of contentIdPatterns) {
+    const match = html.match(pattern)
+    if (match) return match[1]
+  }
+
+  // Fallback to full HTML if no main content found
+  return html
 }
