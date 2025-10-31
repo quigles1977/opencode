@@ -11,6 +11,7 @@ import { WebFetchTool } from "./webfetch"
 import { WriteTool } from "./write"
 import { InvalidTool } from "./invalid"
 import { PerplexitySearchTool } from "./perplexity_search"
+import { KnowledgeBaseSearchTool } from "./kb_search"
 import type { Agent } from "../agent/agent"
 import { Tool } from "./tool"
 import { Instance } from "../project/instance"
@@ -81,6 +82,7 @@ export namespace ToolRegistry {
       EditTool,
       WebFetchTool,
       PerplexitySearchTool,
+      KnowledgeBaseSearchTool,
       GlobTool,
       GrepTool,
       ListTool,

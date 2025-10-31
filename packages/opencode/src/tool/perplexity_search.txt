@@ -1,19 +1,23 @@
 AI-powered web search with synthesized answers and citations.
 
+**Automatically checks knowledge base first** - if similar queries were previously searched, you'll receive cached results. You can then decide whether to use them or perform a fresh search.
+
+**Automatically fetches citation content** - when RAG is enabled with autoStore, full content from top citations is automatically fetched and stored in the knowledge base for future reference.
+
 Features:
 - Aggregates multiple sources into comprehensive answer
 - Returns citations (URLs, titles, dates)
 - Related questions for research expansion
 - Optional deep research mode
 - Domain/time filtering
-- Content fetching from citations
+- Auto-fetches and stores citation content in KB
 
 Parameters:
 - query (required): Research question
 - model: "sonar" (fast) or "sonar-pro" (thorough, 2x citations)
 - searchDomainFilter: ["domain.com"] array
 - searchRecencyFilter: "day"|"week"|"month"|"year"
-- fetchContent: Get full text from top citations (default: false)
+- fetchContent: Get full text from top citations (default: auto when RAG enabled)
 - maxContentFetches: How many to fetch (default: 3)
 - deepResearch: Multi-iteration research (default: false)
 - maxIterations: Number of iterations (default: 3)
