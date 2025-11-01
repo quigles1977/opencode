@@ -29,8 +29,12 @@ export interface InitResult {
 export async function initializeRag(options: InitOptions): Promise<InitResult> {
   const { config, force = false } = options
 
-  // Expand home directory in path
-  const dbPath = config.database.path.replace(/^~/, homedir())
+  // Expand home directory in path and ensure absolute path
+  let dbPath = config.database.path.replace(/^~/, homedir())
+  if (!dbPath.startsWith('/')) {
+    const { resolve } = await import('path')
+    dbPath = resolve(dbPath)
+  }
 
   // Check if already initialized
   if (!force && existsSync(dbPath)) {
@@ -219,7 +223,12 @@ function getModelInfo(model: string): { size: string; description: string } {
  * Clean up RAG database (for testing/reset)
  */
 export async function cleanupRag(config: RagConfig): Promise<InitResult> {
-  const dbPath = config.database.path.replace(/^~/, homedir())
+  // Expand home directory in path and ensure absolute path
+  let dbPath = config.database.path.replace(/^~/, homedir())
+  if (!dbPath.startsWith('/')) {
+    const { resolve } = await import('path')
+    dbPath = resolve(dbPath)
+  }
 
   if (!existsSync(dbPath)) {
     return {

@@ -47,7 +47,12 @@ export class RagRetriever {
   async initialize(): Promise<void> {
     if (this.db) return
 
-    const dbPath = this.config.database.path.replace(/^~/, homedir())
+    // Ensure absolute path to avoid bunfs virtual filesystem issues
+    let dbPath = this.config.database.path.replace(/^~/, homedir())
+    if (!dbPath.startsWith('/')) {
+      const { resolve } = await import('path')
+      dbPath = resolve(dbPath)
+    }
 
     if (!existsSync(dbPath)) {
       throw new Error(
@@ -85,8 +90,12 @@ export class RagRetriever {
     const ollamaAvailable = await this.embeddings.isAvailable()
     if (!ollamaAvailable) return false
 
-    // Check if database exists
-    const dbPath = this.config.database.path.replace(/^~/, homedir())
+    // Check if database exists - ensure absolute path
+    let dbPath = this.config.database.path.replace(/^~/, homedir())
+    if (!dbPath.startsWith('/')) {
+      const { resolve } = await import('path')
+      dbPath = resolve(dbPath)
+    }
     return existsSync(dbPath)
   }
 

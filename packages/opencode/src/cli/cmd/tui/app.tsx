@@ -46,10 +46,34 @@ export function tui(input: {
         }
       : undefined
 
+    // Cleanup function to restore terminal state
+    const cleanup = () => {
+      // Disable mouse tracking modes
+      process.stdout.write("\x1b[?1000l") // Disable X11 mouse reporting
+      process.stdout.write("\x1b[?1002l") // Disable cell motion mouse tracking
+      process.stdout.write("\x1b[?1003l") // Disable all motion mouse tracking
+      process.stdout.write("\x1b[?1006l") // Disable SGR extended mouse mode
+      // Show cursor
+      process.stdout.write("\x1b[?25h")
+      // Reset terminal
+      process.stdout.write("\x1b[0m")
+    }
+
     const onExit = async () => {
+      cleanup()
       await input.onExit?.()
       resolve()
     }
+
+    // Setup signal handlers for clean exit
+    const signalHandler = () => {
+      cleanup()
+      process.exit(0)
+    }
+
+    process.on("SIGINT", signalHandler)
+    process.on("SIGTERM", signalHandler)
+    process.on("exit", cleanup)
 
     render(
       () => {
