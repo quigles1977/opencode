@@ -733,7 +733,7 @@ export namespace Config {
     const configExists = await Bun.file(globalConfigPath).exists()
 
     if (!configExists) {
-      log.info("Creating default global config at", globalConfigPath)
+      log.info("creating default global config", { path: globalConfigPath })
       const defaultGlobalConfig = {
         "$schema": "https://opencode.ai/config.json",
         "rag": {
@@ -866,7 +866,7 @@ export namespace Config {
         }
       }
       await Bun.write(globalConfigPath, JSON.stringify(defaultGlobalConfig, null, 2))
-      log.info("Default global config created successfully")
+      log.info("default global config created")
     }
 
     let result: Info = pipe(
