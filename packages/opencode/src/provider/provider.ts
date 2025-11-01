@@ -1,4 +1,4 @@
-import z from "zod/v4"
+import z from "zod"
 import path from "path"
 import { Config } from "../config/config"
 import { mergeDeep, sortBy } from "remeda"
@@ -306,6 +306,7 @@ export namespace Provider {
               input: ["text"],
               output: ["text"],
             },
+          headers: model.headers,
           provider: model.provider ?? existing?.provider,
         }
         if (model.id && model.id !== modelID) {

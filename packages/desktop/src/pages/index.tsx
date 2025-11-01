@@ -1,8 +1,23 @@
-import { Button, List, SelectDialog, Tooltip, IconButton, Tabs, Icon, Accordion } from "@opencode-ai/ui"
+import {
+  Button,
+  List,
+  SelectDialog,
+  Tooltip,
+  IconButton,
+  Tabs,
+  Icon,
+  Accordion,
+  Diff,
+  Collapsible,
+  Part,
+  DiffChanges,
+  ProgressCircle,
+  Message,
+} from "@opencode-ai/ui"
 import { FileIcon } from "@/ui"
 import FileTree from "@/components/file-tree"
 import { For, onCleanup, onMount, Show, Match, Switch, createSignal, createEffect, createMemo } from "solid-js"
-import { useLocal, type LocalFile, type TextSelection } from "@/context/local"
+import { useLocal, type LocalFile } from "@/context/local"
 import { createStore } from "solid-js/store"
 import { getDirectory, getFilename } from "@/utils"
 import { ContentPart, PromptInput } from "@/components/prompt-input"
@@ -21,7 +36,8 @@ import type { JSX } from "solid-js"
 import { Code } from "@/components/code"
 import { useSync } from "@/context/sync"
 import { useSDK } from "@/context/sdk"
-import { Diff } from "@/components/diff"
+import { type AssistantMessage as AssistantMessageType } from "@opencode-ai/sdk"
+import { Markdown } from "@opencode-ai/ui"
 
 export default function Page() {
   const local = useLocal()
@@ -92,7 +108,7 @@ export default function Page() {
       }
     }
 
-    if (event.key.length === 1 && event.key !== "Unidentified") {
+    if (event.key.length === 1 && event.key !== "Unidentified" && !(event.ctrlKey || event.metaKey)) {
       inputRef?.focus()
     }
   }
@@ -164,6 +180,8 @@ export default function Page() {
   }
 
   const handleDiffTriggerClick = (event: MouseEvent) => {
+    // disabling scroll to diff for now
+    return
     const target = event.currentTarget as HTMLElement
     queueMicrotask(() => {
       if (target.getAttribute("aria-expanded") !== "true") return
@@ -182,42 +200,11 @@ export default function Page() {
     }
     if (!session) return
 
-    interface SubmissionAttachment {
-      path: string
-      selection?: TextSelection
-      label: string
-    }
-
-    const createAttachmentKey = (path: string, selection?: TextSelection) => {
-      if (!selection) return path
-      return `${path}:${selection.startLine}:${selection.startChar}:${selection.endLine}:${selection.endChar}`
-    }
-
-    const formatAttachmentLabel = (path: string, selection?: TextSelection) => {
-      if (!selection) return getFilename(path)
-      return `${getFilename(path)} (${selection.startLine}-${selection.endLine})`
-    }
-
+    local.session.setActive(session.id)
     const toAbsolutePath = (path: string) => (path.startsWith("/") ? path : sync.absolute(path))
 
     const text = parts.map((part) => part.content).join("")
-    const attachments = new Map<string, SubmissionAttachment>()
-
-    const registerAttachment = (path: string, selection: TextSelection | undefined, label?: string) => {
-      if (!path) return
-      const key = createAttachmentKey(path, selection)
-      if (attachments.has(key)) return
-      attachments.set(key, {
-        path,
-        selection,
-        label: label ?? formatAttachmentLabel(path, selection),
-      })
-    }
-
-    const promptAttachments = parts.filter((part) => part.type === "file")
-    for (const part of promptAttachments) {
-      registerAttachment(part.path, part.selection, part.content)
-    }
+    const attachments = parts.filter((part) => part.type === "file")
 
     // const activeFile = local.context.active()
     // if (activeFile) {
@@ -236,7 +223,7 @@ export default function Page() {
     //   )
     // }
 
-    const attachmentParts = Array.from(attachments.values()).map((attachment) => {
+    const attachmentParts = attachments.map((attachment) => {
       const absolute = toAbsolutePath(attachment.path)
       const query = attachment.selection
         ? `?start=${attachment.selection.startLine}&end=${attachment.selection.endLine}`
@@ -249,9 +236,9 @@ export default function Page() {
         source: {
           type: "file" as const,
           text: {
-            value: `@${attachment.label}`,
-            start: 0,
-            end: 0,
+            value: attachment.content,
+            start: attachment.start,
+            end: attachment.end,
           },
           path: absolute,
         },
@@ -275,7 +262,6 @@ export default function Page() {
         ],
       },
     })
-    local.session.setActive(session.id)
   }
 
   const handleNewSession = () => {
@@ -286,7 +272,7 @@ export default function Page() {
   const TabVisual = (props: { file: LocalFile }): JSX.Element => {
     return (
       <div class="flex items-center gap-x-1.5">
-        <FileIcon node={props.file} class="_grayscale-100" />
+        <FileIcon node={props.file} class="grayscale-100 group-data-[selected]/tab:grayscale-0" />
         <span
           classList={{
             "text-14-medium": true,
@@ -325,15 +311,21 @@ export default function Page() {
       <div use:sortable classList={{ "h-full": true, "opacity-0": sortable.isActiveDraggable }}>
         <Tooltip value={props.file.path} placement="bottom" class="h-full">
           <div class="relative h-full">
-            <Tabs.Trigger value={props.file.path} class="peer/tab pr-7" onClick={() => props.onTabClick(props.file)}>
+            <Tabs.Trigger
+              value={props.file.path}
+              class="group/tab pl-3 pr-1"
+              onClick={() => props.onTabClick(props.file)}
+            >
               <TabVisual file={props.file} />
+              <IconButton
+                icon="close"
+                class="mt-0.5 opacity-0 text-text-muted/60 group-data-[selected]/tab:opacity-100
+                       group-data-[selected]/tab:text-text group-data-[selected]/tab:hover:bg-border-subtle
+                       hover:opacity-100 group-hover/tab:opacity-100"
+                variant="ghost"
+                onClick={() => props.onTabClose(props.file)}
+              />
             </Tabs.Trigger>
-            <IconButton
-              icon="close"
-              class="absolute right-1 top-1.5 opacity-0 text-text-muted/60 peer-data-[selected]/tab:opacity-100 peer-data-[selected]/tab:text-text peer-data-[selected]/tab:hover:bg-border-subtle hover:opacity-100 peer-hover/tab:opacity-100"
-              variant="ghost"
-              onClick={() => props.onTabClose(props.file)}
-            />
           </div>
         </Tooltip>
       </div>
@@ -392,9 +384,7 @@ export default function Page() {
               {(session) => {
                 const diffs = createMemo(() => session.summary?.diffs ?? [])
                 const filesChanged = createMemo(() => diffs().length)
-                const additions = createMemo(() => diffs().reduce((acc, diff) => (acc ?? 0) + (diff.additions ?? 0), 0))
-                const deletions = createMemo(() => diffs().reduce((acc, diff) => (acc ?? 0) + (diff.deletions ?? 0), 0))
-
+                const updated = DateTime.fromMillis(session.time.updated)
                 return (
                   <Tooltip placement="right" value={session.title}>
                     <div>
@@ -403,17 +393,19 @@ export default function Page() {
                           {session.title}
                         </span>
                         <span class="text-12-regular text-text-weak text-right whitespace-nowrap">
-                          {DateTime.fromMillis(session.time.updated).toRelative()}
+                          {Math.abs(updated.diffNow().as("seconds")) < 60
+                            ? "Now"
+                            : updated
+                                .toRelative({ style: "short", unit: ["days", "hours", "minutes"] })
+                                ?.replace(" ago", "")
+                                ?.replace(/ days?/, "d")
+                                ?.replace(" min.", "m")
+                                ?.replace(" hr.", "h")}
                         </span>
                       </div>
                       <div class="flex justify-between items-center self-stretch">
                         <span class="text-12-regular text-text-weak">{`${filesChanged() || "No"} file${filesChanged() !== 1 ? "s" : ""} changed`}</span>
-                        <Show when={additions() || deletions()}>
-                          <div class="flex gap-2 justify-end items-center">
-                            <span class="text-12-mono text-right text-text-diff-add-base">{`+${additions()}`}</span>
-                            <span class="text-12-mono text-right text-text-diff-delete-base">{`-${deletions()}`}</span>
-                          </div>
-                        </Show>
+                        <DiffChanges diff={diffs()} />
                       </div>
                     </div>
                   </Tooltip>
@@ -434,13 +426,12 @@ export default function Page() {
             <Tabs onChange={handleTabChange}>
               <div class="sticky top-0 shrink-0 flex">
                 <Tabs.List>
-                  <Tabs.Trigger value="chat" class="flex gap-x-1.5 items-center">
+                  <Tabs.Trigger value="chat" class="flex gap-x-4 items-center">
                     <div>Chat</div>
-                    <Show when={local.session.active()}>
-                      <div class="flex flex-col h-4 px-2 -mr-2 justify-center items-center rounded-full bg-surface-base text-12-medium text-text-strong">
-                        {local.session.context()}%
-                      </div>
-                    </Show>
+                    <Tooltip value={`${local.session.tokens() ?? 0} Tokens`} class="flex items-center gap-1.5">
+                      <ProgressCircle percentage={local.session.context() ?? 0} />
+                      <div class="text-14-regular text-text-weak text-right">{local.session.context() ?? 0}%</div>
+                    </Tooltip>
                   </Tabs.Trigger>
                   {/* <Tabs.Trigger value="review">Review</Tabs.Trigger> */}
                   <SortableProvider ids={local.file.opened().map((file) => file.path)}>
@@ -516,17 +507,17 @@ export default function Page() {
                   </Show>
                 </div>
               </div>
-              <Tabs.Content value="chat" class="select-text flex flex-col flex-1 min-h-0">
-                <div class="p-6 pt-12 max-w-[904px] w-full mx-auto flex flex-col flex-1 min-h-0">
+              <Tabs.Content value="chat" class="@container select-text flex flex-col flex-1 min-h-0 overflow-y-hidden">
+                <div class="relative px-6 pt-12 max-w-2xl w-full mx-auto flex flex-col flex-1 min-h-0">
                   <Show
                     when={local.session.active()}
                     fallback={
-                      <div class="flex flex-col pb-36 justify-end items-start gap-4 flex-[1_0_0] self-stretch">
+                      <div class="flex flex-col pb-45 justify-end items-start gap-4 flex-[1_0_0] self-stretch">
                         <div class="text-20-medium text-text-weaker">New session</div>
                         <div class="flex justify-center items-center gap-3">
                           <Icon name="folder" size="small" />
                           <div class="text-12-medium text-text-weak">
-                            {getDirectory(sync.data.path.directory)}/
+                            {getDirectory(sync.data.path.directory)}
                             <span class="text-text-strong">{getFilename(sync.data.path.directory)}</span>
                           </div>
                         </div>
@@ -543,100 +534,104 @@ export default function Page() {
                     }
                   >
                     {(activeSession) => (
-                      <div class="py-3 flex flex-col flex-1 min-h-0">
-                        <div class="flex items-start gap-8 flex-1 min-h-0">
+                      <div class="pt-3 flex flex-col flex-1 min-h-0">
+                        <div class="flex-1 min-h-0">
                           <Show when={local.session.userMessages().length > 1}>
-                            <ul role="list" class="w-60 shrink-0 flex flex-col items-start gap-1">
+                            <ul
+                              role="list"
+                              class="absolute right-full mr-8 hidden w-60 shrink-0 @7xl:flex flex-col items-start gap-1"
+                            >
                               <For each={local.session.userMessages()}>
-                                {(message) => (
-                                  <li
-                                    class="group/li flex items-center gap-x-2 py-1 self-stretch cursor-default"
-                                    onClick={() => local.session.setActiveMessage(message.id)}
-                                  >
-                                    <div class="w-[18px] shrink-0">
-                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 12" fill="none">
-                                        <g>
-                                          <rect x="0" width="2" height="12" rx="1" fill="#CFCECD" />
-                                          <rect x="4" width="2" height="12" rx="1" fill="#CFCECD" />
-                                          <rect x="8" width="2" height="12" rx="1" fill="#CFCECD" />
-                                          <rect x="12" width="2" height="12" rx="1" fill="#CFCECD" />
-                                          <rect x="16" width="2" height="12" rx="1" fill="#CFCECD" />
-                                        </g>
-                                      </svg>
-                                    </div>
-                                    <div
-                                      data-active={local.session.activeMessage()?.id === message.id}
-                                      classList={{
-                                        "text-14-regular text-text-weak whitespace-nowrap truncate min-w-0": true,
-                                        "text-text-weak data-[active=true]:text-text-strong group-hover/li:text-text-base": true,
-                                      }}
+                                {(message) => {
+                                  const diffs = createMemo(() => message.summary?.diffs ?? [])
+
+                                  return (
+                                    <li
+                                      class="group/li flex items-center gap-x-2 py-1 self-stretch cursor-default"
+                                      onClick={() => local.session.setActiveMessage(message.id)}
                                     >
-                                      {message.summary?.title ?? local.session.getMessageText(message)}
-                                    </div>
-                                  </li>
-                                )}
+                                      <DiffChanges diff={diffs()} variant="bars" />
+                                      <div
+                                        data-active={local.session.activeMessage()?.id === message.id}
+                                        classList={{
+                                          "text-14-regular text-text-weak whitespace-nowrap truncate min-w-0": true,
+                                          "text-text-weak data-[active=true]:text-text-strong group-hover/li:text-text-base": true,
+                                        }}
+                                      >
+                                        {message.summary?.title ?? local.session.getMessageText(message)}
+                                      </div>
+                                    </li>
+                                  )
+                                }}
                               </For>
                             </ul>
                           </Show>
                           <div ref={messageScrollElement} class="grow min-w-0 h-full overflow-y-auto no-scrollbar">
-                            <div class="flex flex-col items-start gap-50 pb-[800px]">
+                            <div class="flex flex-col items-start gap-50 pb-50">
                               <For each={local.session.userMessages()}>
                                 {(message) => {
-                                  const title = createMemo(() => message.summary?.title)
+                                  const [expanded, setExpanded] = createSignal(false)
+                                  const parts = createMemo(() => sync.data.part[message.id])
                                   const prompt = createMemo(() => local.session.getMessageText(message))
+                                  const title = createMemo(() => message.summary?.title)
                                   const summary = createMemo(() => message.summary?.body)
+                                  const assistantMessages = createMemo(() => {
+                                    return sync.data.message[activeSession().id]?.filter(
+                                      (m) => m.role === "assistant" && m.parentID == message.id,
+                                    ) as AssistantMessageType[]
+                                  })
+                                  const working = createMemo(() => !summary())
 
                                   return (
                                     <div
                                       data-message={message.id}
-                                      class="flex flex-col items-start self-stretch gap-14 pt-1.5"
+                                      class="flex flex-col items-start self-stretch gap-8 min-h-screen"
                                     >
                                       {/* Title */}
-                                      <div class="flex flex-col items-start gap-2 self-stretch">
+                                      <div class="py-2 flex flex-col items-start gap-2 self-stretch sticky top-0 bg-background-stronger z-10">
                                         <h1 class="text-14-medium text-text-strong overflow-hidden text-ellipsis min-w-0">
                                           {title() ?? prompt()}
                                         </h1>
-                                        <Show when={title}>
-                                          <div class="text-12-regular text-text-base">{prompt()}</div>
-                                        </Show>
                                       </div>
+                                      <Show when={title}>
+                                        <div class="-mt-8">
+                                          <Message message={message} parts={parts()} />
+                                        </div>
+                                      </Show>
                                       {/* Summary */}
-                                      <div class="w-full flex flex-col gap-6 items-start self-stretch">
-                                        <Show when={summary}>
+                                      <Show when={!working()}>
+                                        <div class="w-full flex flex-col gap-6 items-start self-stretch">
                                           <div class="flex flex-col items-start gap-1 self-stretch">
                                             <h2 class="text-12-medium text-text-weak">Summary</h2>
-                                            <div class="text-14-regular text-text-base self-stretch">{summary()}</div>
+                                            <Show when={summary()}>
+                                              <Markdown text={summary()!} />
+                                            </Show>
                                           </div>
-                                        </Show>
-                                        <Show when={message.summary?.diffs.length}>
                                           <Accordion class="w-full" multiple>
                                             <For each={message.summary?.diffs || []}>
                                               {(diff) => (
                                                 <Accordion.Item value={diff.file}>
                                                   <Accordion.Header>
                                                     <Accordion.Trigger onClick={handleDiffTriggerClick}>
-                                                      <div class="flex items-center justify-between w-full">
-                                                        <div class="flex items-center gap-5">
+                                                      <div class="flex items-center justify-between w-full gap-5">
+                                                        <div class="grow flex items-center gap-5 min-w-0">
                                                           <FileIcon
                                                             node={{ path: diff.file, type: "file" }}
                                                             class="shrink-0 size-4"
                                                           />
-                                                          <div class="flex">
+                                                          <div class="flex grow min-w-0">
                                                             <Show when={diff.file.includes("/")}>
-                                                              <span class="text-text-base">
-                                                                {getDirectory(diff.file)}/
+                                                              <span class="text-text-base truncate-start">
+                                                                {getDirectory(diff.file)}&lrm;
                                                               </span>
                                                             </Show>
-                                                            <span class="text-text-strong">
+                                                            <span class="text-text-strong shrink-0">
                                                               {getFilename(diff.file)}
                                                             </span>
                                                           </div>
                                                         </div>
-                                                        <div class="flex gap-4 items-center justify-end">
-                                                          <div class="flex gap-2 justify-end items-center">
-                                                            <span class="text-12-mono text-right text-text-diff-add-base">{`+${diff.additions}`}</span>
-                                                            <span class="text-12-mono text-right text-text-diff-delete-base">{`-${diff.deletions}`}</span>
-                                                          </div>
+                                                        <div class="shrink-0 flex gap-4 items-center justify-end">
+                                                          <DiffChanges diff={diff} />
                                                           <Icon name="chevron-grabber-vertical" size="small" />
                                                         </div>
                                                       </div>
@@ -658,13 +653,120 @@ export default function Page() {
                                               )}
                                             </For>
                                           </Accordion>
-                                        </Show>
-                                      </div>
-                                      {/* Response */}
-                                      <div data-todo="Response (Timeline)">
-                                        <div class="flex flex-col items-start gap-1 self-stretch">
-                                          <h2 class="text-12-medium text-text-weak">Response</h2>
                                         </div>
+                                      </Show>
+                                      {/* Response */}
+                                      <div class="w-full">
+                                        <Switch>
+                                          <Match when={working()}>
+                                            {(_) => {
+                                              const items = createMemo(() =>
+                                                assistantMessages().flatMap((m) => sync.data.part[m.id]),
+                                              )
+                                              const finishedItems = createMemo(() =>
+                                                items().filter(
+                                                  (p) =>
+                                                    (p?.type === "text" && p.time?.end) ||
+                                                    (p?.type === "reasoning" && p.time?.end) ||
+                                                    (p?.type === "tool" && p.state.status === "completed"),
+                                                ),
+                                              )
+
+                                              const MINIMUM_DELAY = 800
+                                              const [visibleCount, setVisibleCount] = createSignal(1)
+
+                                              createEffect(() => {
+                                                const total = finishedItems().length
+                                                if (total > visibleCount()) {
+                                                  const timer = setTimeout(() => {
+                                                    setVisibleCount((prev) => prev + 1)
+                                                  }, MINIMUM_DELAY)
+                                                  onCleanup(() => clearTimeout(timer))
+                                                } else if (total < visibleCount()) {
+                                                  setVisibleCount(total)
+                                                }
+                                              })
+
+                                              const translateY = createMemo(() => {
+                                                const total = visibleCount()
+                                                if (total < 2) return "0px"
+                                                return `-${(total - 2) * 48 - 8}px`
+                                              })
+
+                                              return (
+                                                <div class="flex flex-col gap-3">
+                                                  <div
+                                                    class="h-36 overflow-hidden pointer-events-none 
+                                                           mask-alpha mask-y-from-66% mask-y-from-background-base mask-y-to-transparent"
+                                                  >
+                                                    <div
+                                                      class="w-full flex flex-col items-start self-stretch gap-2 py-10
+                                                             transform transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]"
+                                                      style={{ transform: `translateY(${translateY()})` }}
+                                                    >
+                                                      <For each={finishedItems()}>
+                                                        {(part) => {
+                                                          const message = createMemo(() =>
+                                                            sync.data.message[part.sessionID].find(
+                                                              (m) => m.id === part.messageID,
+                                                            ),
+                                                          )
+                                                          return (
+                                                            <div class="h-10 flex items-center w-full">
+                                                              <Switch>
+                                                                <Match when={part.type === "text" && part}>
+                                                                  {(p) => (
+                                                                    <div
+                                                                      textContent={p().text}
+                                                                      class="text-12-regular text-text-base whitespace-nowrap truncate w-full"
+                                                                    />
+                                                                  )}
+                                                                </Match>
+                                                                <Match when={part.type === "reasoning" && part}>
+                                                                  {(p) => <Part message={message()!} part={p()} />}
+                                                                </Match>
+                                                                <Match when={part.type === "tool" && part}>
+                                                                  {(p) => <Part message={message()!} part={p()} />}
+                                                                </Match>
+                                                              </Switch>
+                                                            </div>
+                                                          )
+                                                        }}
+                                                      </For>
+                                                    </div>
+                                                  </div>
+                                                </div>
+                                              )
+                                            }}
+                                          </Match>
+                                          <Match when={!working()}>
+                                            <Collapsible variant="ghost" open={expanded()} onOpenChange={setExpanded}>
+                                              <Collapsible.Trigger class="text-text-weak hover:text-text-strong">
+                                                <div class="flex items-center gap-1 self-stretch">
+                                                  <div class="text-12-medium">
+                                                    <Switch>
+                                                      <Match when={expanded()}>Hide steps</Match>
+                                                      <Match when={!expanded()}>Show steps</Match>
+                                                    </Switch>
+                                                  </div>
+                                                  <Collapsible.Arrow />
+                                                </div>
+                                              </Collapsible.Trigger>
+                                              <Collapsible.Content>
+                                                <div class="w-full flex flex-col items-start self-stretch gap-3">
+                                                  <For each={assistantMessages()}>
+                                                    {(assistantMessage) => {
+                                                      const parts = createMemo(
+                                                        () => sync.data.part[assistantMessage.id],
+                                                      )
+                                                      return <Message message={assistantMessage} parts={parts()} />
+                                                    }}
+                                                  </For>
+                                                </div>
+                                              </Collapsible.Content>
+                                            </Collapsible>
+                                          </Match>
+                                        </Switch>
                                       </div>
                                     </div>
                                   )
@@ -699,21 +801,14 @@ export default function Page() {
                 const draggedFile = local.file.node(id)
                 if (!draggedFile) return null
                 return (
-                  <div class="relative px-3 h-8 flex items-center text-sm font-medium text-text whitespace-nowrap shrink-0 bg-background-panel border-x border-border-subtle/40 border-b border-b-transparent">
+                  <div class="relative px-3 h-10 flex items-center bg-background-base border-x border-border-weak-base border-b border-b-transparent">
                     <TabVisual file={draggedFile} />
                   </div>
                 )
               })()}
             </DragOverlay>
           </DragDropProvider>
-          <div
-            classList={{
-              "absolute inset-x-0 px-6 max-w-[904px] flex flex-col justify-center items-center z-50 mx-auto": true,
-              "bottom-8": true,
-              // "bottom-8": !!local.session.active(),
-              // "bottom-1/2 translate-y-1/2": !local.session.active(),
-            }}
-          >
+          <div class="absolute inset-x-0 px-6 max-w-2xl flex flex-col justify-center items-center z-50 mx-auto bottom-8">
             <PromptInput
               ref={(el) => {
                 inputRef = el
@@ -772,7 +867,7 @@ export default function Page() {
                 <FileIcon node={{ path: i, type: "file" }} class="shrink-0 size-4" />
                 <div class="flex items-center text-14-regular">
                   <span class="text-text-weak whitespace-nowrap overflow-hidden overflow-ellipsis truncate min-w-0">
-                    {getDirectory(i)}/
+                    {getDirectory(i)}
                   </span>
                   <span class="text-text-strong whitespace-nowrap">{getFilename(i)}</span>
                 </div>

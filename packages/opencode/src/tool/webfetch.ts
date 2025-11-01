@@ -1,4 +1,4 @@
-import z from "zod/v4"
+import z from "zod"
 import { Tool } from "./tool"
 import TurndownService from "turndown"
 import { extract } from "@extractus/article-extractor"

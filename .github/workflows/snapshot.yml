@@ -5,6 +5,7 @@ on:
     branches:
       - dev
       - opentui
+      - v1
 
 concurrency: ${{ github.workflow }}-${{ github.ref }}
 
