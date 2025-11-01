@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
-  "version": "1.0.9",
+  "version": "BOBv1.0",
   "name": "opencode",
   "type": "module",
   "private": true,
