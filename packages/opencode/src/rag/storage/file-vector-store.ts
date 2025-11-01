@@ -293,13 +293,10 @@ export class FileVectorStore {
     await Bun.write(indexTempPath, JSON.stringify(this.index, null, 2))
     await Bun.write(vectorsTempPath, this.vectors.buffer)
 
-    // Atomic rename
-    await Bun.file(indexTempPath).copyTo(this.indexPath)
-    await Bun.file(vectorsTempPath).copyTo(this.vectorsPath)
-
-    // Clean up temp files
-    await Bun.file(indexTempPath).unlink().catch(() => {})
-    await Bun.file(vectorsTempPath).unlink().catch(() => {})
+    // Atomic rename (works on all filesystems)
+    const { renameSync } = await import("fs")
+    renameSync(indexTempPath, this.indexPath)
+    renameSync(vectorsTempPath, this.vectorsPath)
   }
 
   /**

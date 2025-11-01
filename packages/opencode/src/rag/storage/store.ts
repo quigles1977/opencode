@@ -90,8 +90,15 @@ export class RagStorage {
       // Initialize vector store if needed
       await this.initialize()
 
-      // Generate embedding for the full document
-      const result = await this.embeddings.embed(params.content)
+      // Truncate content for embedding if too long (nomic-embed-text has ~8k token limit)
+      // Use ~6000 chars to be safe (roughly 1500-2000 tokens)
+      const maxEmbedLength = 6000
+      const contentForEmbedding = params.content.length > maxEmbedLength
+        ? params.content.slice(0, maxEmbedLength) + "..."
+        : params.content
+
+      // Generate embedding for the document
+      const result = await this.embeddings.embed(contentForEmbedding)
 
       // Store document with embedding
       const storeResult = await this.vectorStore.addDocument({
