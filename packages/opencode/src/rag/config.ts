@@ -51,12 +51,12 @@ export const RagConfig = z.object({
   retrieval: z
     .object({
       defaultTopK: z.number().default(5),
-      similarityThreshold: z.number().default(0.7),
+      similarityThreshold: z.number().default(0.5),
       hybridSearch: z.boolean().default(true),
     })
     .default(() => ({
       defaultTopK: 5,
-      similarityThreshold: 0.7,
+      similarityThreshold: 0.5,
       hybridSearch: true,
     })),
   management: z
