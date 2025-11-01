@@ -91,8 +91,8 @@ export class RagStorage {
       await this.initialize()
 
       // Truncate content for embedding if too long (nomic-embed-text has ~8k token limit)
-      // Use ~6000 chars to be safe (roughly 1500-2000 tokens)
-      const maxEmbedLength = 6000
+      // Use ~3000 chars to be safe (roughly 750-1000 tokens, accounting for markdown formatting)
+      const maxEmbedLength = 3000
       const contentForEmbedding = params.content.length > maxEmbedLength
         ? params.content.slice(0, maxEmbedLength) + "..."
         : params.content
