@@ -1,7 +1,7 @@
 import z from "zod/v4"
 
 export const RagConfig = z.object({
-  enabled: z.boolean().default(false),
+  enabled: z.boolean().default(true),
   database: z
     .object({
       type: z.enum(["embedded", "external"]).default("embedded"),
@@ -73,7 +73,7 @@ export const RagConfig = z.object({
 export type RagConfig = z.infer<typeof RagConfig>
 
 export const DEFAULT_RAG_CONFIG: RagConfig = {
-  enabled: false,
+  enabled: true,
   database: {
     type: "embedded",
     path: "~/.opencode/knowledge/postgres",
