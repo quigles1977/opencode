@@ -374,6 +374,42 @@ Some models need to be manually enabled in your [GitHub Copilot settings](https:
 
 ---
 
+### Google Vertex AI
+
+To use Google Vertex AI with OpenCode:
+
+1. Head over to the **Model Garden** in the Google Cloud Console and check the
+   models available in your region.
+
+   :::tip
+   You need to have a Google Cloud project with Vertex AI API enabled.
+   :::
+
+2. Set the required environment variables:
+   - `GOOGLE_VERTEX_PROJECT`: Your Google Cloud project ID
+   - `GOOGLE_VERTEX_REGION` (optional): The region for Vertex AI (defaults to `us-east5`)
+   - Authentication (choose one):
+     - `GOOGLE_APPLICATION_CREDENTIALS`: Path to your service account JSON key file
+     - Authenticate using gcloud CLI: `gcloud auth application-default login`
+
+   Set them while running opencode.
+
+   ```bash
+   GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json GOOGLE_VERTEX_PROJECT=your-project-id opencode
+   ```
+
+   Or add them to your bash profile.
+
+   ```bash title="~/.bash_profile"
+   export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
+   export GOOGLE_VERTEX_PROJECT=your-project-id
+   export GOOGLE_VERTEX_REGION=us-central1
+   ```
+
+3. Run the `/models` command to select the model you want.
+
+---
+
 ### Groq
 
 1. Head over to the [Groq console](https://console.groq.com/), click **Create API Key**, and copy the key.
@@ -410,39 +446,42 @@ Some models need to be manually enabled in your [GitHub Copilot settings](https:
 
 ---
 
-### Google Vertex AI
+### Hugging Face
 
-To use Google Vertex AI with OpenCode:
+[Hugging Face Inference Providers](https://huggingface.co/docs/inference-providers) provides access to open models supported by 17+ providers.
 
-1. Head over to the **Model Garden** in the Google Cloud Console and check the
-   models available in your region.
+1. Head over to [Hugging Face settings](https://huggingface.co/settings/tokens/new?ownUserPermissions=inference.serverless.write&tokenType=fineGrained) to create a token with permission to make calls to Inference Providers.
 
-   :::tip
-   You need to have a Google Cloud project with Vertex AI API enabled.
-   :::
-
-2. Set the required environment variables:
-   - `GOOGLE_VERTEX_PROJECT`: Your Google Cloud project ID
-   - `GOOGLE_VERTEX_REGION` (optional): The region for Vertex AI (defaults to `us-east5`)
-   - Authentication (choose one):
-     - `GOOGLE_APPLICATION_CREDENTIALS`: Path to your service account JSON key file
-     - Authenticate using gcloud CLI: `gcloud auth application-default login`
-
-   Set them while running opencode.
+2. Run `opencode auth login` and select **Hugging Face**.
 
    ```bash
-   GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json GOOGLE_VERTEX_PROJECT=your-project-id opencode
+   $ opencode auth login
+
+   ┌  Add credential
+   │
+   ◆  Select provider
+   │  ● Hugging Face
+   │  ...
+   └
    ```
 
-   Or add them to your bash profile.
+3. Enter your Hugging Face token.
 
-   ```bash title="~/.bash_profile"
-   export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
-   export GOOGLE_VERTEX_PROJECT=your-project-id
-   export GOOGLE_VERTEX_REGION=us-central1
+   ```bash
+   $ opencode auth login
+
+   ┌  Add credential
+   │
+   ◇  Select provider
+   │  Hugging Face
+   │
+   ◇  Enter your API key
+   │  _
+   └
    ```
 
-3. Run the `/models` command to select the model you want.
+4. Run the `/models` command to select a model like _Kimi-K2-Instruct_ or _GLM-4.6_.
+
 
 ---
 
