@@ -63,14 +63,29 @@ export class RagStorage {
     }
 
     if (this.config.database.type === "embedded") {
-      const pglite = new PGlite(dbPath, {
-        extensions: { vector },
-      })
+      // Save current directory and change to home to avoid bunfs path issues
+      const originalCwd = process.cwd()
+      const tempCwd = homedir()
 
-      // Ensure PGlite is ready before setting this.db
-      await pglite.waitReady
+      try {
+        process.chdir(tempCwd)
 
-      this.db = pglite as Database
+        const pglite = new PGlite(dbPath, {
+          extensions: { vector },
+        })
+
+        // Ensure PGlite is ready before setting this.db
+        await pglite.waitReady
+
+        this.db = pglite as Database
+      } finally {
+        // Restore original working directory
+        try {
+          process.chdir(originalCwd)
+        } catch {
+          // If original cwd was bunfs virtual path, ignore error
+        }
+      }
     } else {
       // External PostgreSQL connection
       throw new Error("External PostgreSQL support not yet implemented")
