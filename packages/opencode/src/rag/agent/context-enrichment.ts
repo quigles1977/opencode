@@ -1,6 +1,5 @@
 import type { RagConfig } from "../config"
-import { createRagRetriever } from "../retrieval/retriever"
-import type { Document } from "../db/schema"
+import { createRagRetriever, type Document } from "../retrieval/retriever"
 
 export interface EnrichmentOptions {
   query: string

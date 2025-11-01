@@ -35,8 +35,8 @@ export const KbCommand = cmd({
 
               if (result.success) {
                 UI.println(UI.Style.TEXT_SUCCESS_BOLD + result.message + UI.Style.TEXT_NORMAL)
-                if (result.dbPath) {
-                  UI.println(UI.Style.TEXT_INFO + `Database location: ${result.dbPath}` + UI.Style.TEXT_NORMAL)
+                if (result.knowledgePath) {
+                  UI.println(UI.Style.TEXT_INFO + `Knowledge base location: ${result.knowledgePath}` + UI.Style.TEXT_NORMAL)
                 }
                 UI.println(UI.Style.TEXT_INFO + "\nYou can now use the knowledge base search tool in your sessions." + UI.Style.TEXT_NORMAL)
               } else {

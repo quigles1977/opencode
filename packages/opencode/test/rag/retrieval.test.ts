@@ -63,7 +63,8 @@ test.skip("RagRetriever searchBySession filters by session", async () => {
 
   await retriever.close()
 
-  expect(result.documents.every((doc) => doc.session_id === sessionId)).toBe(true)
+  // session_id is now in metadata
+  expect(result.documents.every((doc) => doc.metadata.sessionId === sessionId)).toBe(true)
 })
 
 test.skip("RagRetriever retrieve with hybrid search", async () => {
