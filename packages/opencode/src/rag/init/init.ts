@@ -1,12 +1,10 @@
 import { confirm, log, spinner } from "@clack/prompts"
-import { PGlite } from "@electric-sql/pglite"
-import { vector } from "@electric-sql/pglite/vector"
-import { existsSync, mkdirSync } from "fs"
+import { existsSync } from "fs"
 import { homedir } from "os"
 import { join } from "path"
 import type { RagConfig } from "../config"
-import { initializeSchema } from "../db/schema"
 import { OllamaEmbeddings } from "../embeddings/ollama"
+import { createFileVectorStore } from "../storage/file-vector-store"
 
 export interface InitOptions {
   config: RagConfig
@@ -16,31 +14,28 @@ export interface InitOptions {
 export interface InitResult {
   success: boolean
   message: string
-  dbPath?: string
+  knowledgePath?: string
 }
 
 /**
  * Initialize RAG system
  * - Check Ollama availability
  * - Download required models with user consent
- * - Initialize database
- * - Create schema
+ * - Initialize file-based vector store
+ * - Create directory structure
  */
 export async function initializeRag(options: InitOptions): Promise<InitResult> {
   const { config, force = false } = options
 
-  // Expand home directory in path and ensure absolute path
-  let dbPath = config.database.path.replace(/^~/, homedir())
-  if (!dbPath.startsWith('/')) {
-    const { resolve } = await import('path')
-    dbPath = resolve(dbPath)
-  }
+  // Knowledge base path (always global)
+  const knowledgePath = join(homedir(), ".opencode", "knowledge")
 
   // Check if already initialized
-  if (!force && existsSync(dbPath)) {
+  const vectorStore = createFileVectorStore(config.embeddings.dimensions)
+  if (!force && vectorStore.isInitialized()) {
     return {
       success: false,
-      message: `RAG database already exists at ${dbPath}. Use --force to reinitialize.`,
+      message: `RAG knowledge base already exists at ${knowledgePath}. Use --force to reinitialize.`,
     }
   }
 
@@ -150,36 +145,25 @@ export async function initializeRag(options: InitOptions): Promise<InitResult> {
     }
   }
 
-  // Step 4: Initialize database
-  s.start("Initializing database...")
+  // Step 4: Initialize file-based vector store
+  s.start("Initializing vector store...")
 
   try {
-    // Create database directory if it doesn't exist
-    mkdirSync(dbPath, { recursive: true })
+    // Initialize the vector store (creates directory structure and empty files)
+    await vectorStore.initialize()
 
-    // Initialize PGlite with vector extension
-    const db = new PGlite(dbPath, {
-      extensions: { vector },
-    })
-
-    // Create schema with configured dimensions
-    await initializeSchema(db, config.embeddings.dimensions)
-
-    // Close database
-    await db.close()
-
-    s.stop("Database initialized")
+    s.stop("Vector store initialized")
 
     return {
       success: true,
-      message: "RAG Knowledge Base initialized successfully!",
-      dbPath,
+      message: `RAG Knowledge Base initialized successfully!\n\nLocation: ${knowledgePath}\n\nYou can now use Perplexity search and other tools to populate your knowledge base.`,
+      knowledgePath,
     }
   } catch (error) {
-    s.stop("Database initialization failed")
+    s.stop("Vector store initialization failed")
     return {
       success: false,
-      message: `Failed to initialize database: ${error instanceof Error ? error.message : String(error)}`,
+      message: `Failed to initialize vector store: ${error instanceof Error ? error.message : String(error)}`,
     }
   }
 }
@@ -220,25 +204,20 @@ function getModelInfo(model: string): { size: string; description: string } {
 }
 
 /**
- * Clean up RAG database (for testing/reset)
+ * Clean up RAG knowledge base (for testing/reset)
  */
 export async function cleanupRag(config: RagConfig): Promise<InitResult> {
-  // Expand home directory in path and ensure absolute path
-  let dbPath = config.database.path.replace(/^~/, homedir())
-  if (!dbPath.startsWith('/')) {
-    const { resolve } = await import('path')
-    dbPath = resolve(dbPath)
-  }
+  const knowledgePath = join(homedir(), ".opencode", "knowledge")
 
-  if (!existsSync(dbPath)) {
+  if (!existsSync(knowledgePath)) {
     return {
       success: false,
-      message: `RAG database does not exist at ${dbPath}`,
+      message: `RAG knowledge base does not exist at ${knowledgePath}`,
     }
   }
 
   const shouldDelete = await confirm({
-    message: `Delete RAG database at ${dbPath}? This cannot be undone.`,
+    message: `Delete RAG knowledge base at ${knowledgePath}? This cannot be undone.`,
     initialValue: false,
   })
 
@@ -250,18 +229,17 @@ export async function cleanupRag(config: RagConfig): Promise<InitResult> {
   }
 
   try {
-    // TODO: Add recursive delete once we confirm safe path
     const { rmSync } = await import("fs")
-    rmSync(dbPath, { recursive: true, force: true })
+    rmSync(knowledgePath, { recursive: true, force: true })
 
     return {
       success: true,
-      message: "RAG database deleted successfully.",
+      message: "RAG knowledge base deleted successfully.",
     }
   } catch (error) {
     return {
       success: false,
-      message: `Failed to delete database: ${error instanceof Error ? error.message : String(error)}`,
+      message: `Failed to delete knowledge base: ${error instanceof Error ? error.message : String(error)}`,
     }
   }
 }

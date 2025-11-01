@@ -422,7 +422,12 @@ ${cachedOutput}
             }
           })
           .catch((err) => {
-            console.warn(`Error storing Perplexity result in RAG:`, err)
+            // Silently ignore storage errors in compiled binary (PGlite incompatibility)
+            if (err instanceof Error && err.message.includes('bunfs')) {
+              console.warn(`RAG storage unavailable in compiled binary (PGlite/Bun compile incompatibility)`)
+            } else {
+              console.warn(`Error storing Perplexity result in RAG:`, err)
+            }
           })
 
         // Store individual fetched citation contents if available

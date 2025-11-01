@@ -1,10 +1,6 @@
-import { PGlite } from "@electric-sql/pglite"
-import { vector } from "@electric-sql/pglite/vector"
-import { homedir } from "os"
-import { existsSync } from "fs"
 import type { RagConfig } from "../config"
 import { createEmbeddingsClient } from "../embeddings/ollama"
-import { searchSimilar, type Database, type Document, type SearchParams } from "../db/schema"
+import { createFileVectorStore, type FileVectorStore } from "../storage/file-vector-store"
 
 export interface RetrievalOptions {
   query: string
@@ -16,6 +12,18 @@ export interface RetrievalOptions {
   rerank?: boolean
 }
 
+export interface Document {
+  id: string
+  content: string
+  source_type: string
+  source_url: string
+  title: string
+  timestamp: string
+  metadata: Record<string, any>
+  tags: string[]
+  similarity?: number
+}
+
 export interface RetrievalResult {
   documents: Document[]
   query: string
@@ -25,10 +33,10 @@ export interface RetrievalResult {
 
 /**
  * RAG Retrieval Service
- * Handles searching and retrieving documents from the vector database
+ * Handles searching and retrieving documents from the file-based vector store
  */
 export class RagRetriever {
-  private db: Database | null = null
+  private vectorStore: FileVectorStore
   private config: RagConfig
   private embeddings: ReturnType<typeof createEmbeddingsClient>
 
@@ -39,48 +47,27 @@ export class RagRetriever {
       ollamaUrl: config.embeddings.ollamaUrl,
       dimensions: config.embeddings.dimensions,
     })
+    this.vectorStore = createFileVectorStore(config.embeddings.dimensions)
   }
 
   /**
-   * Initialize database connection
+   * Initialize vector store
    */
   async initialize(): Promise<void> {
-    if (this.db) return
-
-    // Ensure absolute path to avoid bunfs virtual filesystem issues
-    let dbPath = this.config.database.path.replace(/^~/, homedir())
-    if (!dbPath.startsWith('/')) {
-      const { resolve } = await import('path')
-      dbPath = resolve(dbPath)
-    }
-
-    if (!existsSync(dbPath)) {
+    if (!this.vectorStore.isInitialized()) {
       throw new Error(
-        `RAG database not initialized. Please run 'opencode kb init' first. Expected path: ${dbPath}`,
+        `Vector store not initialized. Please run 'opencode kb init' first.`
       )
     }
-
-    if (this.config.database.type === "embedded") {
-      // Use file:// protocol to ensure absolute path is used
-      const fileUrl = `file://${dbPath}`
-
-      this.db = new PGlite(fileUrl, {
-        extensions: { vector },
-      }) as Database
-    } else {
-      // External PostgreSQL connection
-      throw new Error("External PostgreSQL support not yet implemented")
-    }
+    // Load index into memory
+    await this.vectorStore.load()
   }
 
   /**
-   * Close database connection
+   * Close vector store (no-op for file-based store)
    */
   async close(): Promise<void> {
-    if (this.db && "close" in this.db) {
-      await (this.db as PGlite).close()
-      this.db = null
-    }
+    // File-based store doesn't need to close connections
   }
 
   /**
@@ -93,13 +80,8 @@ export class RagRetriever {
     const ollamaAvailable = await this.embeddings.isAvailable()
     if (!ollamaAvailable) return false
 
-    // Check if database exists - ensure absolute path
-    let dbPath = this.config.database.path.replace(/^~/, homedir())
-    if (!dbPath.startsWith('/')) {
-      const { resolve } = await import('path')
-      dbPath = resolve(dbPath)
-    }
-    return existsSync(dbPath)
+    // Check if vector store is initialized
+    return this.vectorStore.isInitialized()
   }
 
   /**
@@ -113,12 +95,8 @@ export class RagRetriever {
       throw new Error("RAG system not available (not initialized or Ollama not running)")
     }
 
-    // Initialize database if needed
+    // Initialize vector store if needed
     await this.initialize()
-
-    if (!this.db) {
-      throw new Error("Database not initialized")
-    }
 
     // Generate query embedding
     const queryEmbedding = await this.embeddings.embed(options.query)
@@ -127,35 +105,26 @@ export class RagRetriever {
     const topK = options.topK ?? this.config.retrieval.defaultTopK
     const threshold = options.similarityThreshold ?? this.config.retrieval.similarityThreshold
 
-    let documents: Document[]
+    // Search vector store
+    const searchResults = await this.vectorStore.search({
+      queryEmbedding: queryEmbedding.embedding,
+      topK,
+      similarityThreshold: threshold,
+      sourceTypeFilter: options.sourceType ? [options.sourceType] : undefined,
+    })
 
-    if (options.useHybridSearch ?? this.config.retrieval.hybridSearch) {
-      // Hybrid search: vector + full-text
-      documents = await this.hybridSearch({
-        embedding: queryEmbedding.embedding,
-        textQuery: options.query,
-        limit: topK,
-        threshold,
-        source_type: options.sourceType,
-        sessionId: options.sessionId,
-      })
-    } else {
-      // Vector-only search
-      documents = await searchSimilar(this.db, {
-        embedding: queryEmbedding.embedding,
-        limit: topK,
-        threshold,
-        source_type: options.sourceType,
-      })
-    }
-
-    // Apply reranking if requested and enabled
-    if ((options.rerank ?? this.config.reranking.enabled) && documents.length > 0) {
-      documents = await this.rerank(options.query, documents)
-    }
-
-    // Note: searchSimilar already returns full parent documents (not chunks)
-    // Each document is unique and contains the full markdown content
+    // Convert to Document format
+    const documents: Document[] = searchResults.map((result) => ({
+      id: result.document.id,
+      content: result.content,
+      source_type: result.document.sourceType,
+      source_url: result.document.sourceUrl,
+      title: result.document.title,
+      timestamp: result.document.timestamp,
+      metadata: result.document.metadata,
+      tags: result.document.tags,
+      similarity: result.similarity,
+    }))
 
     const processingTimeMs = Date.now() - startTime
 
@@ -165,132 +134,6 @@ export class RagRetriever {
       totalResults: documents.length,
       processingTimeMs,
     }
-  }
-
-  /**
-   * Hybrid search combining vector similarity and full-text search
-   * Searches chunks but returns unique parent documents
-   */
-  private async hybridSearch(params: SearchParams & { textQuery: string; sessionId?: string }): Promise<Document[]> {
-    if (!this.db) throw new Error("Database not initialized")
-
-    const { embedding, textQuery, limit = 10, threshold = 0.7, source_type, sessionId } = params
-
-    // Build query with both vector similarity and full-text search on chunks
-    // Then join with parent documents and return unique parents
-    let query = `
-      WITH vector_search AS (
-        SELECT
-          dc.parent_document_id,
-          1 - (dc.embedding <=> $1::vector) as vector_similarity
-        FROM document_chunks dc
-        WHERE 1 - (dc.embedding <=> $1::vector) > $2
-      ),
-      text_search AS (
-        SELECT
-          dc.parent_document_id,
-          ts_rank(to_tsvector('english', dc.content), plainto_tsquery('english', $3)) as text_rank
-        FROM document_chunks dc
-        WHERE to_tsvector('english', dc.content) @@ plainto_tsquery('english', $3)
-      ),
-      combined_scores AS (
-        SELECT DISTINCT
-          COALESCE(v.parent_document_id, t.parent_document_id) as parent_document_id,
-          COALESCE(v.vector_similarity, 0) as vector_similarity,
-          COALESCE(t.text_rank, 0) as text_rank,
-          (COALESCE(v.vector_similarity, 0) * 0.7 + COALESCE(t.text_rank, 0) * 0.3) as combined_score
-        FROM vector_search v
-        FULL OUTER JOIN text_search t ON v.parent_document_id = t.parent_document_id
-      )
-      SELECT DISTINCT ON (pd.id)
-        pd.id, pd.content, pd.metadata, pd.source_type,
-        pd.source_url, pd.title, pd.timestamp, pd.session_id, pd.tags,
-        cs.combined_score as similarity
-      FROM combined_scores cs
-      JOIN parent_documents pd ON cs.parent_document_id = pd.id
-    `
-
-    const values: any[] = [JSON.stringify(embedding), threshold, textQuery]
-
-    if (source_type) {
-      query += ` WHERE pd.source_type = $${values.length + 1}`
-      values.push(source_type)
-    }
-
-    if (sessionId) {
-      query += source_type
-        ? ` AND pd.session_id = $${values.length + 1}`
-        : ` WHERE pd.session_id = $${values.length + 1}`
-      values.push(sessionId)
-    }
-
-    query += ` ORDER BY pd.id, similarity DESC LIMIT $${values.length + 1}`
-    values.push(limit)
-
-    const result = await this.db.query(query, values)
-
-    return result.rows.map((row: any) => ({
-      id: row.id,
-      content: row.content,
-      metadata: row.metadata,
-      source_type: row.source_type,
-      source_url: row.source_url,
-      title: row.title,
-      timestamp: row.timestamp,
-      session_id: row.session_id,
-      tags: row.tags,
-      similarity: row.similarity,
-    }))
-  }
-
-  /**
-   * Rerank results using query-document relevance scoring
-   *
-   * Note: Ollama doesn't currently support dedicated reranking models API.
-   * This implementation uses a hybrid scoring approach:
-   * - Vector similarity (from initial retrieval)
-   * - Query term matching (keyword overlap)
-   * - Document length normalization
-   */
-  private async rerank(query: string, documents: Document[]): Promise<Document[]> {
-    if (documents.length === 0) return documents
-
-    const queryTerms = query.toLowerCase().split(/\s+/).filter(t => t.length > 2)
-
-    // Calculate reranking score for each document
-    const scored = documents.map(doc => {
-      const content = doc.content.toLowerCase()
-      const metadata = doc.metadata as any
-
-      // Base score from vector similarity (already present in results)
-      const vectorScore = metadata.similarity || 0.5
-
-      // Term matching score: how many query terms appear in document
-      const matchingTerms = queryTerms.filter(term => content.includes(term)).length
-      const termScore = queryTerms.length > 0 ? matchingTerms / queryTerms.length : 0
-
-      // Length normalization: prefer concise, relevant documents
-      const idealLength = 500 // characters
-      const lengthPenalty = Math.min(1, idealLength / Math.max(doc.content.length, idealLength))
-
-      // Combine scores with weights
-      const finalScore = (
-        vectorScore * 0.6 +        // 60% vector similarity
-        termScore * 0.3 +           // 30% term matching
-        lengthPenalty * 0.1         // 10% length preference
-      )
-
-      return {
-        doc,
-        score: finalScore
-      }
-    })
-
-    // Sort by reranking score (descending)
-    scored.sort((a, b) => b.score - a.score)
-
-    // Return reranked documents
-    return scored.map(item => item.doc)
   }
 
   /**
