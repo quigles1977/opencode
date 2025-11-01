@@ -69,9 +69,10 @@ export class FileVectorStore {
    * Initialize the vector store directory structure
    */
   async initialize(): Promise<void> {
-    // Create directories
-    await Bun.write(Bun.file(this.knowledgePath), "")
-    await Bun.write(Bun.file(this.documentsPath), "")
+    // Create directories using mkdir
+    const { mkdirSync } = await import("fs")
+    mkdirSync(this.knowledgePath, { recursive: true })
+    mkdirSync(this.documentsPath, { recursive: true })
 
     // Create empty index
     const emptyIndex: VectorIndex = {
