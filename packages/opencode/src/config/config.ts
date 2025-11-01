@@ -728,6 +728,147 @@ export namespace Config {
   export type Info = z.output<typeof Info>
 
   export const global = lazy(async () => {
+    // Auto-generate default global config if it doesn't exist
+    const globalConfigPath = path.join(Global.Path.config, "opencode.json")
+    const configExists = await Bun.file(globalConfigPath).exists()
+
+    if (!configExists) {
+      log.info("creating default global config", { path: globalConfigPath })
+      const defaultGlobalConfig = {
+        "$schema": "https://opencode.ai/config.json",
+        "rag": {
+          "enabled": true,
+          "embeddings": {
+            "model": "nomic-embed-text",
+            "ollamaUrl": "http://localhost:11434",
+            "dimensions": 768
+          },
+          "storage": {
+            "autoStore": true,
+            "chunkSize": 8000,
+            "maxChunkOverlap": 200
+          },
+          "retrieval": {
+            "defaultTopK": 5,
+            "similarityThreshold": 0.7,
+            "hybridSearch": true
+          }
+        },
+        "provider": {
+          "cerebra": {
+            "npm": "@ai-sdk/openai-compatible",
+            "name": "Cerebra",
+            "env": [],
+            "options": {
+              "baseURL": "https://api.cerebras.ai/v1",
+              "compatibility": "strict"
+            },
+            "models": {
+              "llama3.1-8b": {
+                "id": "llama3.1-8b",
+                "name": "Llama 3.1 8B",
+                "release_date": "2024-07-01",
+                "attachment": false,
+                "reasoning": false,
+                "temperature": true,
+                "tool_call": true,
+                "cost": {
+                  "input": 0.1,
+                  "output": 0.1
+                },
+                "limit": {
+                  "context": 128000,
+                  "output": 8192
+                },
+                "options": {
+                  "rateLimitMs": 1200
+                }
+              },
+              "llama3.1-70b": {
+                "id": "llama3.1-70b",
+                "name": "Llama 3.1 70B",
+                "release_date": "2024-07-01",
+                "attachment": false,
+                "reasoning": false,
+                "temperature": true,
+                "tool_call": true,
+                "cost": {
+                  "input": 0.6,
+                  "output": 0.6
+                },
+                "limit": {
+                  "context": 128000,
+                  "output": 8192
+                },
+                "options": {
+                  "rateLimitMs": 1200
+                }
+              }
+            }
+          },
+          "ollama": {
+            "npm": "@ai-sdk/openai-compatible",
+            "name": "Ollama",
+            "env": [],
+            "options": {
+              "baseURL": "http://localhost:11434/v1",
+              "compatibility": "strict",
+              "timeout": false
+            },
+            "models": {
+              "qwen3-coder:30b": {
+                "id": "qwen3-coder:30b",
+                "name": "Qwen 3 Coder 30B (262k)",
+                "release_date": "2024-11-01",
+                "attachment": false,
+                "reasoning": false,
+                "temperature": true,
+                "tool_call": true,
+                "cost": {
+                  "input": 0,
+                  "output": 0
+                },
+                "limit": {
+                  "context": 262144,
+                  "output": 66536
+                },
+                "options": {
+                  "repeat_penalty": 1.1,
+                  "num_ctx": 262144,
+                  "num_predict": 66536,
+                  "max_tokens": 66536
+                }
+              }
+            }
+          },
+          "openrouter": {
+            "models": {
+              "minimax/minimax-m2": {
+                "id": "minimax/minimax-m2",
+                "name": "MiniMax M2",
+                "release_date": "2025-01-01",
+                "attachment": false,
+                "reasoning": false,
+                "temperature": true,
+                "tool_call": true,
+                "cost": {
+                  "input": 0.3,
+                  "output": 1.2
+                },
+                "limit": {
+                  "context": 204800,
+                  "output": 131072
+                },
+                "options": {}
+              }
+            }
+          }
+        }
+      }
+      await Bun.write(globalConfigPath, JSON.stringify(defaultGlobalConfig, null, 2))
+      log.info("default global config created")
+    }
+
     let result: Info = pipe(
       {},
       mergeDeep(await loadFile(path.join(Global.Path.config, "config.json"))),

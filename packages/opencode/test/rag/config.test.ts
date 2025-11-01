@@ -41,7 +41,7 @@ test("RagConfig applies defaults", () => {
   const minimalConfig = {}
   const result = RagConfig.parse(minimalConfig)
 
-  expect(result.enabled).toBe(false)
+  expect(result.enabled).toBe(true)
   // Nested defaults are applied when empty object is passed
   expect(result.database).toBeDefined()
   expect(result.embeddings).toBeDefined()
@@ -62,7 +62,7 @@ test("RagConfig applies nested defaults correctly", () => {
   }
   const result = RagConfig.parse(configWithEmptyObjects)
 
-  expect(result.enabled).toBe(false)
+  expect(result.enabled).toBe(true)
   expect(result.database.type).toBe("embedded")
   expect(result.embeddings.model).toBe("nomic-embed-text")
   expect(result.embeddings.dimensions).toBe(768)
@@ -94,7 +94,7 @@ test("RagConfig validates embedding model", () => {
 })
 
 test("DEFAULT_RAG_CONFIG has correct structure", () => {
-  expect(DEFAULT_RAG_CONFIG.enabled).toBe(false)
+  expect(DEFAULT_RAG_CONFIG.enabled).toBe(true)
   expect(DEFAULT_RAG_CONFIG.database.type).toBe("embedded")
   expect(DEFAULT_RAG_CONFIG.embeddings.model).toBe("nomic-embed-text")
   expect(DEFAULT_RAG_CONFIG.embeddings.dimensions).toBe(768)
